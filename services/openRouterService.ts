@@ -22,6 +22,9 @@ type OpenRouterContent = {
     mime_type?: string;
     mimeType?: string;
     url?: string;
+    image_url?: {
+        url?: string;
+    };
     b64_json?: string;
     base64?: string;
     audio?: {
@@ -89,17 +92,32 @@ const ensureOk = async (response: Response): Promise<Response> => {
     );
 };
 
+const rethrowNetworkError = (error: unknown): never => {
+    if (error instanceof TypeError) {
+        throw new Error(
+            'Failed to reach OpenRouter. Please verify your network connection, API key, and that browser requests to the OpenRouter endpoint are allowed.'
+        );
+    }
+
+    throw error instanceof Error ? error : new Error(String(error));
+};
+
 const streamOpenRouterChat = async (
     body: Record<string, unknown>,
     onDelta: (text: string) => void
 ): Promise<void> => {
-    const response = await ensureOk(
-        await fetch(`${openRouterBaseUrl}/chat/completions`, {
+    let rawResponse: Response;
+    try {
+        rawResponse = await fetch(`${openRouterBaseUrl}/chat/completions`, {
             method: 'POST',
             headers: getOpenRouterHeaders(),
             body: JSON.stringify({ ...body, stream: true }),
-        })
-    );
+        });
+    } catch (error) {
+        rethrowNetworkError(error);
+    }
+
+    const response = await ensureOk(rawResponse);
 
     if (!response.body) {
         throw new Error('OpenRouter response did not include a streaming body.');
@@ -149,16 +167,52 @@ const streamOpenRouterChat = async (
     }
 };
 
+const parseJsonResponse = async <T>(response: Response): Promise<T> => {
+    const raw = await response.text();
+    try {
+        return JSON.parse(raw) as T;
+    } catch {
+        const snippet = raw.trim().slice(0, 200);
+        throw new Error(
+            snippet
+                ? `OpenRouter returned a non-JSON response: ${snippet}`
+                : 'OpenRouter returned an empty response.'
+        );
+    }
+};
+
 const callOpenRouterResponses = async (body: Record<string, unknown>): Promise<OpenRouterResponse> => {
-    const response = await ensureOk(
-        await fetch(`${openRouterBaseUrl}/responses`, {
+    let rawResponse: Response;
+    try {
+        rawResponse = await fetch(`${openRouterBaseUrl}/responses`, {
             method: 'POST',
             headers: getOpenRouterHeaders(),
             body: JSON.stringify(body),
-        })
-    );
+        });
+    } catch (error) {
+        rethrowNetworkError(error);
+    }
 
-    return (await response.json()) as OpenRouterResponse;
+    const response = await ensureOk(rawResponse);
+
+    return parseJsonResponse<OpenRouterResponse>(response);
+};
+
+const callOpenRouterChat = async (body: Record<string, unknown>): Promise<OpenRouterResponse> => {
+    let rawResponse: Response;
+    try {
+        rawResponse = await fetch(`${openRouterBaseUrl}/chat/completions`, {
+            method: 'POST',
+            headers: getOpenRouterHeaders(),
+            body: JSON.stringify(body),
+        });
+    } catch (error) {
+        rethrowNetworkError(error);
+    }
+
+    const response = await ensureOk(rawResponse);
+
+    return parseJsonResponse<OpenRouterResponse>(response);
 };
 
 const collectContent = (payload: OpenRouterResponse): OpenRouterContent[] => {
@@ -176,6 +230,13 @@ const collectContent = (payload: OpenRouterResponse): OpenRouterContent[] => {
 
         for (const item of items) {
             if (item) {
+                if (item.image_url?.url) {
+                    buckets.push({
+                        type: item.type ?? 'output_image',
+                        url: item.image_url.url,
+                    });
+                    continue;
+                }
                 buckets.push(item);
             }
         }
@@ -254,17 +315,20 @@ export const editImage = async (
     mimeType: string,
     prompt: string
 ): Promise<string> => {
-    const response = await callOpenRouterResponses({
-        model:
-            import.meta.env.VITE_OPENROUTER_IMAGE_MODEL ??
-            import.meta.env.VITE_OPENROUTER_MODEL ??
-            'google/gemini-2.0-flash-lite-preview',
-        input: [
+    const imageModel =
+        import.meta.env.VITE_OPENROUTER_IMAGE_MODEL ?? 'google/gemini-2.5-flash-image';
+
+    const response = await callOpenRouterChat({
+        model: imageModel,
+        messages: [
             {
                 role: 'user',
                 content: [
-                    { type: 'input_text', text: prompt },
-                    { type: 'input_image', image: `data:${mimeType};base64,${base64Data}` },
+                    { type: 'text', text: prompt },
+                    {
+                        type: 'image_url',
+                        image_url: { url: `data:${mimeType};base64,${base64Data}` },
+                    },
                 ],
             },
         ],

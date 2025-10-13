@@ -1,17 +1,34 @@
 
 import { GoogleGenAI, Modality, Type } from "@google/genai";
 
-if (!process.env.API_KEY) {
-    throw new Error("API_KEY environment variable is not set");
-}
+const apiKey =
+    import.meta.env.VITE_GEMINI_API_KEY ??
+    import.meta.env.VITE_API_KEY ??
+    import.meta.env.PUBLIC_GEMINI_API_KEY ??
+    '';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+let client: GoogleGenAI | null = null;
+
+const getClient = (): GoogleGenAI => {
+    if (!apiKey) {
+        throw new Error(
+            'Gemini API key is not configured. Please set VITE_GEMINI_API_KEY in your environment.'
+        );
+    }
+
+    if (!client) {
+        client = new GoogleGenAI({ apiKey });
+    }
+
+    return client;
+};
 
 export const structureScriptFromText = async (
     text: string,
     onStream: (chunk: string) => void
 ): Promise<void> => {
-    
+    const ai = getClient();
+
     const result = await ai.models.generateContentStream({
         model: 'gemini-2.5-flash',
         contents: `Take the following text and format it into a structured video script. Break it down into logical scenes. Each scene should have a unique ID and a script. Respond with only the JSON object.
@@ -53,6 +70,7 @@ export const editImage = async (
   mimeType: string,
   prompt: string
 ): Promise<string> => {
+    const ai = getClient();
     const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash-image',
         contents: {
@@ -77,6 +95,7 @@ export const editImage = async (
 };
 
 export const generateVideoForScene = async (prompt: string, imageBase64: string, mimeType: string): Promise<string> => {
+    const ai = getClient();
     let operation = await ai.models.generateVideos({
         model: 'veo-2.0-generate-001',
         prompt: prompt,
@@ -105,7 +124,7 @@ export const generateVideoForScene = async (prompt: string, imageBase64: string,
     }
     
     // The video must be fetched with the API key
-    return `${downloadLink}&key=${process.env.API_KEY}`;
+    return `${downloadLink}&key=${apiKey}`;
 };
 
 
@@ -114,6 +133,7 @@ export const generateSpeechFromText = async (
     voiceName: string,
     onAudioChunk: (base64Data: string, mimeType: string) => void
 ): Promise<void> => {
+    const ai = getClient();
     const result = await ai.models.generateContentStream({
         model: 'gemini-2.5-pro-preview-tts',
         contents: [{

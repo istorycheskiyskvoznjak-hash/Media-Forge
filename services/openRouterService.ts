@@ -310,6 +310,28 @@ export const structureScriptFromText = async (
     );
 };
 
+const fetchImageAsDataUrl = async (url: string): Promise<string> => {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Failed to download generated image. Status: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+
+    return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            if (typeof reader.result === 'string') {
+                resolve(reader.result);
+            } else {
+                reject(new Error('Could not convert generated image to data URL.'));
+            }
+        };
+        reader.onerror = () => reject(new Error('Failed to read generated image blob.'));
+        reader.readAsDataURL(blob);
+    });
+};
+
 export const editImage = async (
     base64Data: string,
     mimeType: string,
@@ -318,17 +340,14 @@ export const editImage = async (
     const imageModel =
         import.meta.env.VITE_OPENROUTER_IMAGE_MODEL ?? 'google/gemini-2.5-flash-image';
 
-    const response = await callOpenRouterChat({
+    const response = await callOpenRouterResponses({
         model: imageModel,
-        messages: [
+        input: [
             {
                 role: 'user',
                 content: [
-                    { type: 'text', text: prompt },
-                    {
-                        type: 'image_url',
-                        image_url: { url: `data:${mimeType};base64,${base64Data}` },
-                    },
+                    { type: 'input_text', text: prompt },
+                    { type: 'input_image', image: `data:${mimeType};base64,${base64Data}` },
                 ],
             },
         ],
@@ -350,7 +369,12 @@ export const editImage = async (
 
         if (part?.type === 'output_image' || part?.type === 'image' || imageBase64) {
             if (part?.url && part.url.startsWith('http')) {
-                return part.url;
+                try {
+                    return await fetchImageAsDataUrl(part.url);
+                } catch (error) {
+                    console.warn('Failed to convert remote image to data URL', error);
+                    return part.url;
+                }
             }
 
             if (imageBase64) {

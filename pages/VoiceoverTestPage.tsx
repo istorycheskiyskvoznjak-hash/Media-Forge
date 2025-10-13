@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect } from 'react';
 import { Project, ProjectScene } from '../types';
 import * as geminiService from '../services/geminiService';
@@ -78,81 +80,8 @@ function createWavHeader(dataLength: number, options: WavConversionOptions): Arr
     return buffer;
 }
 
-// --- ICONS ---
-const ArrowLeftIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>
-);
 
-// --- MOCK DATA ---
-type ScenarioStatus = 'Опубликовано' | 'В работе' | 'В ящик';
-const mockScenarios: { id: string; title: string; excerpts: any[]; status: ScenarioStatus }[] = [
-    {
-        id: 'scen-001',
-        title: 'Сценарий №001: Project 001: Neon City',
-        status: 'В работе',
-        excerpts: [{
-            id: 'ex-1-1',
-            title: 'Отрывок #1',
-            scenes: [
-                { id: 'scene-1', script: 'A solitary figure stands on a neon-lit rooftop, cinematic shot...' },
-                { id: 'scene-2', script: 'Close up on the figure pulling up their collar, face hidden in shadow...' },
-                { id: 'scene-3', script: 'Wide shot of a flying vehicle zipping past in the distance...' },
-            ]
-        }]
-    },
-    {
-        id: 'scen-002',
-        title: 'Сценарий №002: Forgotten Kingdom',
-        status: 'В ящик',
-        excerpts: [
-            { id: 'ex-2-1', title: 'Отрывок #1', scenes: [{ id: 'scene-2-1-1', script: 'Ancient ruins overgrown with glowing flora...' }] },
-            { id: 'ex-2-2', title: 'Отрывок #2', scenes: [{ id: 'scene-2-2-1', script: 'A lone explorer discovers a hidden artifact...' }] },
-        ]
-    },
-    {
-        id: 'scen-003',
-        title: 'Сценарий №003: Deep Space Anomaly',
-        status: 'Опубликовано',
-        excerpts: [{
-            id: 'ex-3-1',
-            title: 'Отрывок #1',
-            scenes: [
-                { id: 'scene-3-1-1', script: 'The spaceship approaches a swirling nebula...' },
-                { id: 'scene-3-1-2', script: 'Interior shot, the crew looks at the viewscreen in awe...' },
-            ]
-        }]
-    },
-    {
-        id: 'scen-004',
-        title: 'Сценарий №004: Steampunk Detective',
-        status: 'В работе',
-        excerpts: [
-            { id: 'ex-4-1', title: 'Отрывок #1', scenes: [{ id: 'scene-4-1-1', script: 'A cobblestone street shrouded in fog, gaslights flickering...' }] },
-            { id: 'ex-4-2', title: 'Отрывок #2', scenes: [{ id: 'scene-4-2-1', script: 'The detective examines a clue with a magnifying glass...' }] },
-        ]
-    },
-    {
-        id: 'scen-005',
-        title: 'Сценарий №005: Whispering Forest',
-        status: 'В работе',
-        excerpts: [{
-            id: 'ex-5-1',
-            title: 'Отрывок #1',
-            scenes: [
-                { id: 'scene-5-1-1', script: 'Sunlight filtering through a dense, magical forest canopy...' },
-                { id: 'scene-5-1-2', script: 'A mythical creature peeks from behind an ancient tree...' },
-            ]
-        }]
-    }
-];
-const statusColors: Record<ScenarioStatus, string> = {
-    'Опубликовано': 'bg-green-500/20 text-green-300 border border-green-500/30',
-    'В работе': 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30',
-    'В ящик': 'bg-gray-500/20 text-gray-400 border border-gray-500/30',
-};
-
-
-interface VoiceoverPageProps {
+interface VoiceoverTestPageProps {
   project: Project;
 }
 
@@ -164,8 +93,7 @@ const availableVoices = [
     'Vindemiatrix', 'Zephyr', 'Zubenelgenubi'
 ];
 
-
-const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project }) => {
+const VoiceoverTestPage: React.FC<VoiceoverTestPageProps> = ({ project }) => {
     const [activeScene, setActiveScene] = useState<ProjectScene | null>(project.scenes[0] || null);
     
     // UI State
@@ -175,18 +103,13 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project }) => {
     const [audioUrl, setAudioUrl] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    // State for the new scenarios sidebar
-    const [sidebarView, setSidebarView] = useState<'details' | 'list'>('list');
-    const [activeScenarioId, setActiveScenarioId] = useState<string>(mockScenarios[0].id);
-    const activeScenario = mockScenarios.find(s => s.id === activeScenarioId);
-
     useEffect(() => {
         if (activeScene) {
             setScriptText(activeScene.script);
             if (audioUrl) URL.revokeObjectURL(audioUrl);
             setAudioUrl(null);
             setError(null);
-            // Don't set isLoading to false here, as it might be running
+            setIsLoading(false);
         }
     }, [activeScene]);
 
@@ -199,20 +122,6 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project }) => {
     const handleSceneSelect = (scene: ProjectScene) => {
         setActiveScene(scene);
     };
-
-    const handleSceneClick = (sceneFromMock: { id: string; script: string }) => {
-        if (activeScenarioId === 'scen-001') {
-             const sceneToSelect = project.scenes.find(projScene => projScene.id === sceneFromMock.id);
-             if (sceneToSelect) {
-                handleSceneSelect(sceneToSelect);
-             } else {
-                 alert("This scene is not available in the current project data.");
-             }
-        } else {
-            alert("Voiceover for this scenario is not connected yet. Please select a scene from 'Project 001'.");
-        }
-    }
-
 
     const handleGenerate = async () => {
         if (!scriptText) return;
@@ -227,6 +136,7 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project }) => {
         let totalLength = 0;
 
         try {
+            // FIX: Corrected function name from generateSpeechFromTextTest to generateSpeechFromText
             await geminiService.generateSpeechFromText(
                 scriptText,
                 selectedVoice,
@@ -241,6 +151,7 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project }) => {
                 let finalBlob: Blob;
                 const mimeTypeLower = audioMimeType.toLowerCase();
 
+                // Check if the mime type indicates raw PCM audio that needs a WAV header
                 if (mimeTypeLower.includes('audio/l16') || mimeTypeLower.includes('audio/l24') || mimeTypeLower.includes('audio/pcm')) {
                     const combinedData = new Uint8Array(totalLength);
                     let offset = 0;
@@ -252,6 +163,7 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project }) => {
                     const header = createWavHeader(combinedData.length, options);
                     finalBlob = new Blob([header, combinedData], { type: 'audio/wav' });
                 } else {
+                    // For standard formats like audio/mpeg, just create a blob directly
                     finalBlob = new Blob(audioChunks, { type: audioMimeType });
                 }
                 const url = URL.createObjectURL(finalBlob);
@@ -261,7 +173,7 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project }) => {
             }
 
         } catch (err) {
-            console.error("Voiceover generation failed:", err);
+            console.error("Voiceover test generation failed:", err);
             const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
             setError(`Failed to generate voiceover: ${errorMessage}`);
         } finally {
@@ -271,55 +183,24 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project }) => {
 
     return (
         <div className="space-y-8">
-            <h1 className="text-3xl font-bold text-gray-100 border-b-2 border-purple-500/30 pb-2">Студия озвучки</h1>
+            <h1 className="text-3xl font-bold text-gray-100 border-b-2 border-purple-500/30 pb-2">Студия озвучки (Тестовая страница)</h1>
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Scene/Scenario List */}
+                {/* Scene List */}
                 <div className="lg:col-span-1 p-6 bg-gray-800 rounded-xl shadow-lg border border-gray-700 h-fit">
-                    {sidebarView === 'details' && activeScenario ? (
-                        <>
-                            <div className="flex items-center gap-3 mb-4 cursor-pointer" onClick={() => setSidebarView('list')}>
-                                <button className="p-1 text-purple-400 hover:text-purple-300">
-                                    <ArrowLeftIcon className="w-5 h-5" />
-                                </button>
-                                <h3 className="font-semibold text-purple-300 list-none truncate">{activeScenario.title}</h3>
+                    <h3 className="text-xl font-semibold mb-4 text-purple-300">Сцены</h3>
+                    <div className="space-y-2">
+                        {project.scenes.map(scene => (
+                            <div
+                                key={scene.id}
+                                onClick={() => handleSceneSelect(scene)}
+                                className={`p-3 rounded-lg cursor-pointer transition-all duration-200 ${activeScene?.id === scene.id ? 'bg-purple-800/50' : 'hover:bg-gray-700/50'}`}
+                            >
+                                <p className="font-bold text-gray-200">Сцена {project.scenes.indexOf(scene) + 1}</p>
+                                <p className="text-sm text-gray-400 mt-1 truncate">{scene.script}</p>
                             </div>
-                            <div className="pl-4 space-y-2 border-l-2 border-gray-700">
-                                {activeScenario.excerpts.map(excerpt => (
-                                     <details key={excerpt.id} open>
-                                        <summary className="font-medium text-gray-300 list-none cursor-pointer text-sm">{excerpt.title}</summary>
-                                        <div className="pl-4 mt-1 space-y-1 border-l-2 border-gray-600">
-                                            {excerpt.scenes.map((scene: any, index: number) => (
-                                                <div key={scene.id} onClick={() => handleSceneClick(scene)} className={`p-2 rounded-md cursor-pointer text-xs transition-colors ${activeScene?.id === scene.id ? 'bg-purple-800/50' : 'hover:bg-gray-700/50'}`}>
-                                                    <p className="font-bold">Сцена #{index + 1}</p>
-                                                    <p className="text-gray-400 truncate">{scene.script}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </details>
-                                ))}
-                            </div>
-                        </>
-                    ) : (
-                         <>
-                            <div className="flex justify-between items-center mb-4">
-                               <h3 className="text-xl font-semibold text-purple-300">Сценарии</h3>
-                               <button className="px-3 py-1 bg-indigo-600 text-sm rounded-md">Создать новый</button>
-                            </div>
-                            <div className="space-y-2">
-                               {[...mockScenarios].reverse().map(scenario => (
-                                <div key={scenario.id} onClick={() => { setActiveScenarioId(scenario.id); setSidebarView('details'); }} className="p-3 rounded-lg cursor-pointer hover:bg-gray-700/50 bg-gray-900/50">
-                                   <div className="flex justify-between items-center">
-                                       <p className="font-bold text-gray-200 truncate pr-2">{scenario.title}</p>
-                                       <span className={`px-2 py-0.5 text-xs font-semibold rounded-full whitespace-nowrap ${statusColors[scenario.status]}`}>
-                                           {scenario.status}
-                                       </span>
-                                   </div>
-                                </div>
-                               ))}
-                            </div>
-                         </>
-                    )}
+                        ))}
+                    </div>
                 </div>
 
                 {/* Voiceover Studio */}
@@ -339,7 +220,7 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project }) => {
                             </div>
                              <div className="flex flex-wrap gap-4 items-center pt-4 border-t border-gray-700/60">
                                 <button onClick={handleGenerate} disabled={!scriptText || isLoading} className="px-6 py-2 bg-purple-600 hover:bg-purple-700 rounded-md font-semibold transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                                    {isLoading ? <><Spinner /> Генерируем...</> : 'Сгенерировать'}
+                                    {isLoading ? <><Spinner /> Генерируем...</> : 'Сгенерировать (Тест)'}
                                 </button>
                             </div>
                             <div className="h-24">
@@ -379,4 +260,4 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project }) => {
     );
 };
 
-export default VoiceoverPage;
+export default VoiceoverTestPage;

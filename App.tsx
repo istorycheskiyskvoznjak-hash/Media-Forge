@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback } from 'react';
 import { Project } from './types';
 import Header from './components/Header';
@@ -15,7 +16,7 @@ const initialProject: Project = {
   scenes: [
     {
       id: 'scene-1',
-      script: 'A solitary figure stands on a neon-lit rooftop, overlooking a futuristic city at night. Rain slicks the streets below, reflecting the glowing advertisements.',
+      script: 'A solitary figure stands on a neon-lit rooftop, cinematic shot, futuristic city at night, reflecting glowing advertisements.',
       baseImage: null,
       generatedImage: null,
       isProcessingImage: false,
@@ -24,7 +25,7 @@ const initialProject: Project = {
     },
     {
       id: 'scene-2',
-      script: 'The figure pulls up their collar against the wind, their face hidden in shadow.',
+      script: 'Close up on the figure pulling up their collar, face hidden in shadow, dramatic lighting, rain.',
       baseImage: null,
       generatedImage: null,
       isProcessingImage: false,
@@ -33,7 +34,7 @@ const initialProject: Project = {
     },
      {
       id: 'scene-3',
-      script: 'A flying vehicle zips past silently in the distance.',
+      script: 'Wide shot of a flying vehicle zipping past in the distance, motion blur, neon city background.',
       baseImage: null,
       generatedImage: null,
       isProcessingImage: false,
@@ -41,6 +42,16 @@ const initialProject: Project = {
       isProcessingVideo: false,
     },
   ],
+};
+
+const Footer: React.FC = () => {
+    return (
+        <footer className="w-full text-center py-4 bg-gray-900 border-t border-purple-500/20 mt-auto">
+            <p className="text-xs text-gray-500">
+                PWRD BY COBZHA & GEMINI © 2025
+            </p>
+        </footer>
+    );
 };
 
 
@@ -76,6 +87,7 @@ const App: React.FC = () => {
           {renderPage()}
         </main>
       </div>
+      <Footer />
     </div>
   );
 };

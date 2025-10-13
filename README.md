@@ -15,8 +15,6 @@ View your app in AI Studio: https://ai.studio/apps/drive/1XjNhWXwPWchZvqttcG6CrZ
 
 1. Install dependencies:
    `npm install`
-2. Set the `VITE_OPENROUTER_API_KEY` in [.env.local](.env.local) to your OpenRouter API key. The app
-   uses the `google/gemini-2.5-flash-image` model on OpenRouter for image generation, so make sure
-   your account has access to it or override the `VITE_OPENROUTER_IMAGE_MODEL` variable if needed.
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`

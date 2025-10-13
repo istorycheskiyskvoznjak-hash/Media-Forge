@@ -94,9 +94,22 @@ const ensureOk = async (response: Response): Promise<Response> => {
 
 const rethrowNetworkError = (error: unknown): never => {
     if (error instanceof TypeError) {
-        throw new Error(
-            'Failed to reach OpenRouter. Please verify your network connection, API key, and that browser requests to the OpenRouter endpoint are allowed.'
-        );
+        const parts = [
+            'Не удалось связаться с OpenRouter.',
+            'Проверьте подключение к интернету и значение VITE_OPENROUTER_API_KEY.',
+            'Если запрос выполняется прямо из браузера, убедитесь, что домен указан в Allow List в кабинете OpenRouter или используйте собственный прокси.'
+        ];
+
+        const baseUrl = openRouterBaseUrl;
+        if (baseUrl) {
+            parts.push(`Текущий адрес API: ${baseUrl}.`);
+        }
+
+        if (typeof error.message === 'string' && error.message.trim()) {
+            parts.push(`Сообщение браузера: ${error.message}.`);
+        }
+
+        throw new Error(parts.join(' '));
     }
 
     throw error instanceof Error ? error : new Error(String(error));

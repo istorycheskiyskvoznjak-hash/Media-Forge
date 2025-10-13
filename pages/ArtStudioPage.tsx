@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Project, ProjectScene } from '../types';
-import * as geminiService from '../services/geminiService';
+import * as openRouterService from '../services/openRouterService';
 import Spinner from '../components/Spinner';
 
 interface ArtStudioPageProps {
@@ -69,7 +69,11 @@ const ArtStudioPage: React.FC<ArtStudioPageProps> = ({ project, onUpdateProject 
         updateScene({ ...activeScene, isProcessingImage: true, generatedImage: null, generatedVideoUrl: null });
         try {
             const base64Data = activeScene.baseImage.dataUrl.split(',')[1];
-            const generatedDataUrl = await geminiService.editImage(base64Data, activeScene.baseImage.mimeType, imagePrompt);
+            const generatedDataUrl = await openRouterService.editImage(
+                base64Data,
+                activeScene.baseImage.mimeType,
+                imagePrompt
+            );
             updateScene({ ...activeScene, generatedImage: generatedDataUrl, isProcessingImage: false });
         } catch (error) {
             console.error("Image generation failed:", error);
@@ -86,7 +90,11 @@ const ArtStudioPage: React.FC<ArtStudioPageProps> = ({ project, onUpdateProject 
             const base64Data = activeScene.generatedImage.split(',')[1];
             const mimeType = activeScene.generatedImage.substring(5, activeScene.generatedImage.indexOf(';'));
             
-            const videoUrl = await geminiService.generateVideoForScene(activeScene.script, base64Data, mimeType);
+            const videoUrl = await openRouterService.generateVideoForScene(
+                activeScene.script,
+                base64Data,
+                mimeType
+            );
             
             updateScene({ ...activeScene, generatedVideoUrl: videoUrl, isProcessingVideo: false });
 

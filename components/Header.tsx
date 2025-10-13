@@ -30,7 +30,7 @@ const NavLink: React.FC<{page: string; activePage: string; setActivePage: (page:
 const Header: React.FC<HeaderProps> = ({ activePage, setActivePage }) => {
   return (
     <header className="bg-gray-900/70 backdrop-blur-sm border-b border-purple-500/30 shadow-lg shadow-purple-900/20 z-10">
-      <div className="container mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+        <div className="container mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <CobraIcon className="w-8 h-8 text-purple-400" />
           <h1 className="text-xl md:text-2xl font-bold tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-500">
@@ -43,8 +43,13 @@ const Header: React.FC<HeaderProps> = ({ activePage, setActivePage }) => {
             <NavLink page="art" activePage={activePage} setActivePage={setActivePage}>Художка</NavLink>
             <NavLink page="voiceover" activePage={activePage} setActivePage={setActivePage}>Озвучка</NavLink>
         </nav>
-        <a href="https://github.com/google/genai-js" target="_blank" rel="noopener noreferrer" className="text-sm text-gray-400 hover:text-purple-400 transition-colors">
-            Powered by Gemini
+        <a
+          href="https://openrouter.ai"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm text-gray-400 hover:text-purple-400 transition-colors"
+        >
+            Powered by OpenRouter
         </a>
       </div>
     </header>

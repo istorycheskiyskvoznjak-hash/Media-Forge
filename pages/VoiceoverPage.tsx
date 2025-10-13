@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
 import { Project, ProjectScene } from '../types';
-import * as geminiService from '../services/geminiService';
+import * as openRouterService from '../services/openRouterService';
 import Spinner from '../components/Spinner';
 
 interface VoiceoverPageProps {
@@ -60,7 +59,7 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project }) => {
         let audioMimeType: string | null = null;
 
         try {
-            await geminiService.generateSpeechFromText(
+            await openRouterService.generateSpeechFromText(
                 scriptText,
                 selectedVoice,
                 (base64Data, mimeType) => {
@@ -97,7 +96,7 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project }) => {
 
     return (
         <div className="space-y-8">
-            <h1 className="text-3xl font-bold text-gray-100 border-b-2 border-purple-500/30 pb-2">Студия озвучки (Gemini TTS)</h1>
+            <h1 className="text-3xl font-bold text-gray-100 border-b-2 border-purple-500/30 pb-2">Студия озвучки (OpenRouter TTS)</h1>
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Scene List */}

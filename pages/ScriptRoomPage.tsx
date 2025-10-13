@@ -1,7 +1,6 @@
-
 import React, { useState } from 'react';
 import { Project } from '../types';
-import * as geminiService from '../services/geminiService';
+import * as openRouterService from '../services/openRouterService';
 import Spinner from '../components/Spinner';
 
 interface ScriptRoomPageProps {
@@ -20,7 +19,7 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
         let fullResponse = '';
 
         try {
-            await geminiService.structureScriptFromText(rawText, (chunk) => {
+            await openRouterService.structureScriptFromText(rawText, (chunk) => {
                 fullResponse += chunk;
                 setStructuredScript(fullResponse);
             });

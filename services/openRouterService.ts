@@ -269,7 +269,7 @@ export const structureScriptFromText = async (
 ): Promise<void> => {
     await streamOpenRouterChat(
         {
-            model: import.meta.env.VITE_OPENROUTER_MODEL ?? 'google/gemini-2.0-flash-lite-preview',
+            model: import.meta.env.VITE_OPENROUTER_MODEL ?? 'google/gemini-2.5-flash',
             messages: [
                 {
                     role: 'system',
@@ -376,7 +376,7 @@ export const generateVideoForScene = async (
         model:
             import.meta.env.VITE_OPENROUTER_VIDEO_MODEL ??
             import.meta.env.VITE_OPENROUTER_MODEL ??
-            'google/gemini-2.0-flash-lite-preview',
+            'google/gemini-2.5-flash',
         input: [
             {
                 role: 'user',
@@ -421,7 +421,7 @@ export const generateSpeechFromText = async (
         model:
             import.meta.env.VITE_OPENROUTER_TTS_MODEL ??
             import.meta.env.VITE_OPENROUTER_MODEL ??
-            'google/gemini-2.0-flash-lite-preview',
+            'google/gemini-2.5-flash',
         input: [
             {
                 role: 'user',

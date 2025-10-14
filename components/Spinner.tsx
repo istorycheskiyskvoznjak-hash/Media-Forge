@@ -1,10 +1,10 @@
 
 import React from 'react';
 
-const Spinner: React.FC = () => {
+const Spinner: React.FC<{ size?: string }> = ({ size = "h-8 w-8" }) => {
     return (
         <div className="flex justify-center items-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-400"></div>
+            <div className={`animate-spin rounded-full border-b-2 border-purple-400 ${size}`}></div>
         </div>
     );
 };

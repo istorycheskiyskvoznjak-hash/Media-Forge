@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback } from 'react';
 import { Project } from './types';
 import Header from './components/Header';
@@ -22,6 +23,7 @@ const initialProject: Project = {
       isProcessingImage: false,
       generatedVideoUrl: null,
       isProcessingVideo: false,
+      voiceoverHistory: [],
     },
     {
       id: 'scene-2',
@@ -31,6 +33,10 @@ const initialProject: Project = {
       isProcessingImage: false,
       generatedVideoUrl: null,
       isProcessingVideo: false,
+      voiceoverHistory: [
+          { id: 'vo-2-1', url: 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=', timestamp: new Date(Date.now() - 1000 * 60 * 5).toISOString(), voice: 'Achernar' },
+          { id: 'vo-2-2', url: 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=', timestamp: new Date(Date.now() - 1000 * 60 * 10).toISOString(), voice: 'Achernar' }
+      ],
     },
      {
       id: 'scene-3',
@@ -40,6 +46,13 @@ const initialProject: Project = {
       isProcessingImage: false,
       generatedVideoUrl: null,
       isProcessingVideo: false,
+      voiceoverHistory: [
+          { id: 'vo-3-1', url: 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=', timestamp: new Date(Date.now() - 1000 * 60 * 2).toISOString(), voice: 'Algieba' },
+          { id: 'vo-3-2', url: 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=', timestamp: new Date(Date.now() - 1000 * 60 * 4).toISOString(), voice: 'Algieba' },
+          { id: 'vo-3-3', url: 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=', timestamp: new Date(Date.now() - 1000 * 60 * 6).toISOString(), voice: 'Algieba' },
+          { id: 'vo-3-4', url: 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=', timestamp: new Date(Date.now() - 1000 * 60 * 8).toISOString(), voice: 'Algieba' },
+          { id: 'vo-3-5', url: 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=', timestamp: new Date(Date.now() - 1000 * 60 * 12).toISOString(), voice: 'Achernar' },
+      ],
     },
   ],
 };
@@ -72,7 +85,7 @@ const App: React.FC = () => {
       case 'art':
         return <ArtStudioPage project={project} onUpdateProject={updateProject} />;
       case 'voiceover':
-        return <VoiceoverPage project={project} />;
+        return <VoiceoverPage project={project} onUpdateProject={updateProject} />;
       default:
         return <DashboardPage />;
     }

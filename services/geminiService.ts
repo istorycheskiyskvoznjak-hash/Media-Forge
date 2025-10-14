@@ -1,5 +1,4 @@
-
-import { GoogleGenAI, Modality, Type } from "@google/genai";
+import { GoogleGenAI, Modality, Type, Content } from "@google/genai";
 
 if (!process.env.API_KEY) {
     throw new Error("API_KEY environment variable is not set");
@@ -18,37 +17,27 @@ function base64ToUint8Array(base64: string) {
     return bytes;
 }
 
-export const structureScriptFromText = async (
-    text: string,
-    onStream: (chunk: string) => void
+export const SCRIPT_WRITER_SYSTEM_INSTRUCTION = `Вы — ассистент профессионального сценариста. Ваша главная цель — помочь пользователю развить его идеи и структурировать их в валидный JSON-сценарий для видео. Сначала обсудите идею с пользователем, задайте уточняющие вопросы и помогите ему проработать сцены. Как только пользователь будет готов, отформатируйте весь сценарий в единый JSON-объект. Структура JSON должна быть следующей: { "scenes": [ { "id": "scene-1", "script": "Описание для сцены 1.", "baseImage": null, "generatedImage": null, "isProcessingImage": false, "generatedVideoUrl": null, "isProcessingVideo": false, "voiceoverHistory": [] }, { "id": "scene-2", "script": "Описание для сцены 2.", "baseImage": null, "generatedImage": null, "isProcessingImage": false, "generatedVideoUrl": null, "isProcessingVideo": false, "voiceoverHistory": [] } ] }. Не выводите JSON, пока пользователь не подтвердит, что он готов. Ведите креативную и полезную беседу.`;
+
+
+export const streamChatResponse = async (
+    history: { role: 'user' | 'model'; text: string }[],
+    onStream: (chunk: string) => void,
+    systemInstruction?: string | null
 ): Promise<void> => {
     
+    const contents: Content[] = history.map(msg => ({
+        role: msg.role,
+        parts: [{ text: msg.text }],
+    }));
+    
+    const instruction = systemInstruction || SCRIPT_WRITER_SYSTEM_INSTRUCTION;
+
     const result = await ai.models.generateContentStream({
         model: 'gemini-2.5-flash',
-        contents: `Take the following text and format it into a structured video script. Break it down into logical scenes. Each scene should have a unique ID and a script. Respond with only the JSON object.
-
-        TEXT:
-        ---
-        ${text}
-        ---
-        `,
+        contents: contents,
         config: {
-            responseMimeType: "application/json",
-            responseSchema: {
-                type: Type.OBJECT,
-                properties: {
-                    scenes: {
-                        type: Type.ARRAY,
-                        items: {
-                            type: Type.OBJECT,
-                            properties: {
-                                id: { type: Type.STRING },
-                                script: { type: Type.STRING },
-                            }
-                        }
-                    }
-                }
-            }
+            systemInstruction: instruction,
         }
     });
 
@@ -58,6 +47,7 @@ export const structureScriptFromText = async (
         }
     }
 };
+
 
 export const generateImageFromPrompt = async (prompt: string): Promise<string> => {
     const response = await ai.models.generateImages({
@@ -95,14 +85,16 @@ export const editImage = async (
                 { text: instruction },
             ],
         },
+        // FIX: The `responseModalities` array must contain exactly one modality.
         config: {
-            responseModalities: [Modality.IMAGE, Modality.TEXT],
+            responseModalities: [Modality.IMAGE],
         },
     });
 
     const imagePart = response.candidates?.[0]?.content?.parts.find(part => part.inlineData);
 
     if (imagePart?.inlineData) {
+        // FIX: Replaced 'imagePage' with 'imagePart' to correct the variable name.
         return `data:${imagePart.inlineData.mimeType};base64,${imagePart.inlineData.data}`;
     }
 
@@ -150,13 +142,32 @@ export const generateVideoForScene = async (animationPrompt: string, imageBase64
 };
 
 
+export const addStressMarksToText = async (text: string): Promise<string> => {
+    const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Add stress marks to the following Russian text. Place a '+' symbol immediately after the stressed vowel in each word. For example, 'привет' becomes 'приве+т'. Only return the modified text without any extra formatting or explanations.
+        
+        TEXT:
+        ---
+        ${text}
+        ---
+        `,
+        config: {
+            temperature: 0.1, // Lower temperature for more deterministic output
+        }
+    });
+    return response.text;
+};
+
+
 export const generateSpeechFromText = async (
     scriptText: string,
     voiceName: string,
     onAudioChunk: (data: Uint8Array, mimeType: string) => void
 ): Promise<void> => {
     const result = await ai.models.generateContentStream({
-        model: 'gemini-2.5-pro-preview-tts',
+        // FIX: Updated model name to the recommended one for text-to-speech.
+        model: 'gemini-2.5-flash-preview-tts',
         contents: [{
             role: 'user',
             parts: [{ text: scriptText }],

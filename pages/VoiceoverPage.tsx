@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useState, useEffect, useCallback } from 'react';
 import { Project, ProjectScene } from '../types';
 import * as geminiService from '../services/geminiService';
 import Spinner from '../components/Spinner';
 
-// --- WAV Conversion Helpers (adapted for browser from user's example) ---
-
+// --- WAV Conversion Helpers ---
+// (These helpers are kept as they are essential for audio processing)
 interface WavConversionOptions {
   numChannels: number;
   sampleRate: number;
@@ -12,33 +13,19 @@ interface WavConversionOptions {
 }
 
 function parseMimeType(mimeType: string): WavConversionOptions {
-    const defaultOptions = {
-        numChannels: 1,
-        sampleRate: 24000, // A common default for TTS
-        bitsPerSample: 16, // L16 is common
-    };
-
+    const defaultOptions = { numChannels: 1, sampleRate: 24000, bitsPerSample: 16 };
     const [fileType, ...params] = mimeType.split(';').map(s => s.trim());
     const [_, format] = fileType.split('/');
-
-    const options: Partial<WavConversionOptions> = {
-        numChannels: 1,
-    };
-
+    const options: Partial<WavConversionOptions> = { numChannels: 1 };
     if (format && format.toUpperCase().startsWith('L')) {
         const bits = parseInt(format.slice(1), 10);
-        if (!isNaN(bits)) {
-            options.bitsPerSample = bits;
-        }
+        if (!isNaN(bits)) options.bitsPerSample = bits;
     }
-
     for (const param of params) {
         const [key, value] = param.split('=').map(s => s.trim());
         if (key.toLowerCase() === 'rate') {
             const rate = parseInt(value, 10);
-            if (!isNaN(rate)) {
-                options.sampleRate = rate;
-            }
+            if (!isNaN(rate)) options.sampleRate = rate;
         }
     }
     return { ...defaultOptions, ...options } as WavConversionOptions;
@@ -48,206 +35,140 @@ function createWavHeader(dataLength: number, options: WavConversionOptions): Arr
     const { numChannels, sampleRate, bitsPerSample } = options;
     const byteRate = sampleRate * numChannels * bitsPerSample / 8;
     const blockAlign = numChannels * bitsPerSample / 8;
-
     const buffer = new ArrayBuffer(44);
     const view = new DataView(buffer);
-
     const writeString = (offset: number, str: string) => {
-        for (let i = 0; i < str.length; i++) {
-            view.setUint8(offset + i, str.charCodeAt(i));
-        }
+        for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
     };
-
-    // RIFF header
     writeString(0, 'RIFF');
     view.setUint32(4, 36 + dataLength, true);
     writeString(8, 'WAVE');
-    // "fmt " sub-chunk
     writeString(12, 'fmt ');
-    view.setUint32(16, 16, true); // Subchunk1Size for PCM
-    view.setUint16(20, 1, true); // AudioFormat 1 for PCM
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
     view.setUint16(22, numChannels, true);
     view.setUint32(24, sampleRate, true);
     view.setUint32(28, byteRate, true);
     view.setUint16(32, blockAlign, true);
     view.setUint16(34, bitsPerSample, true);
-    // "data" sub-chunk
     writeString(36, 'data');
     view.setUint32(40, dataLength, true);
-
     return buffer;
 }
 
-// --- ICONS ---
-const ArrowLeftIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" /></svg>
-);
 
-// --- MOCK DATA ---
+// --- MOCK DATA & CONFIG ---
 type ScenarioStatus = 'Опубликовано' | 'В работе' | 'В ящик';
-const mockScenarios: { id: string; title: string; excerpts: any[]; status: ScenarioStatus }[] = [
-    {
-        id: 'scen-001',
-        title: 'Сценарий №001: Project 001: Neon City',
-        status: 'В работе',
-        excerpts: [{
-            id: 'ex-1-1',
-            title: 'Отрывок #1',
-            scenes: [
-                { id: 'scene-1', script: 'A solitary figure stands on a neon-lit rooftop, cinematic shot...' },
-                { id: 'scene-2', script: 'Close up on the figure pulling up their collar, face hidden in shadow...' },
-                { id: 'scene-3', script: 'Wide shot of a flying vehicle zipping past in the distance...' },
-            ]
-        }]
-    },
-    {
-        id: 'scen-002',
-        title: 'Сценарий №002: Forgotten Kingdom',
-        status: 'В ящик',
-        excerpts: [
-            { id: 'ex-2-1', title: 'Отрывок #1', scenes: [{ id: 'scene-2-1-1', script: 'Ancient ruins overgrown with glowing flora...' }] },
-            { id: 'ex-2-2', title: 'Отрывок #2', scenes: [{ id: 'scene-2-2-1', script: 'A lone explorer discovers a hidden artifact...' }] },
-        ]
-    },
-    {
-        id: 'scen-003',
-        title: 'Сценарий №003: Deep Space Anomaly',
-        status: 'Опубликовано',
-        excerpts: [{
-            id: 'ex-3-1',
-            title: 'Отрывок #1',
-            scenes: [
-                { id: 'scene-3-1-1', script: 'The spaceship approaches a swirling nebula...' },
-                { id: 'scene-3-1-2', script: 'Interior shot, the crew looks at the viewscreen in awe...' },
-            ]
-        }]
-    },
-    {
-        id: 'scen-004',
-        title: 'Сценарий №004: Steampunk Detective',
-        status: 'В работе',
-        excerpts: [
-            { id: 'ex-4-1', title: 'Отрывок #1', scenes: [{ id: 'scene-4-1-1', script: 'A cobblestone street shrouded in fog, gaslights flickering...' }] },
-            { id: 'ex-4-2', title: 'Отрывок #2', scenes: [{ id: 'scene-4-2-1', script: 'The detective examines a clue with a magnifying glass...' }] },
-        ]
-    },
-    {
-        id: 'scen-005',
-        title: 'Сценарий №005: Whispering Forest',
-        status: 'В работе',
-        excerpts: [{
-            id: 'ex-5-1',
-            title: 'Отрывок #1',
-            scenes: [
-                { id: 'scene-5-1-1', script: 'Sunlight filtering through a dense, magical forest canopy...' },
-                { id: 'scene-5-1-2', script: 'A mythical creature peeks from behind an ancient tree...' },
-            ]
-        }]
-    }
+const mockScenarios: { id: string; title: string; status: ScenarioStatus }[] = [
+    { id: 'scen-001', title: 'Сценарий №001: Project 001: Neon City', status: 'В работе' },
+    { id: 'scen-002', title: 'Сценарий №002: Forgotten Kingdom', status: 'В ящик' },
+    { id: 'scen-003', title: 'Сценарий №003: Deep Space Anomaly', status: 'Опубликовано' },
+    { id: 'scen-004', title: 'Сценарий №004: Steampunk Detective', status: 'В работе' },
+    { id: 'scen-005', title: 'Сценарий №005: Whispering Forest', status: 'В работе' },
 ];
 const statusColors: Record<ScenarioStatus, string> = {
     'Опубликовано': 'bg-green-500/20 text-green-300 border border-green-500/30',
     'В работе': 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30',
     'В ящик': 'bg-gray-500/20 text-gray-400 border border-gray-500/30',
 };
-
-
-interface VoiceoverPageProps {
-  project: Project;
-}
-
-const availableVoices = [
-    'Achernar', 'Achird', 'Algenib', 'Algieba', 'Alnilam', 'Aoede', 'Autonoe', 
-    'Callirrhoe', 'Charon', 'Despina', 'Enceladus', 'Erinome', 'Fenrir', 'Gacrux', 
-    'Iapetus', 'Kore', 'Laomedeia', 'Leda', 'Orus', 'Puck', 'Pulcherrima', 
-    'Rasalgethi', 'Sadachbia', 'Sadaltager', 'Schedar', 'Sulafat', 'Umbriel', 
-    'Vindemiatrix', 'Zephyr', 'Zubenelgenubi'
+const availableVoices = ['Achernar', 'Achird', 'Algenib', 'Algieba', 'Alnilam', 'Aoede', 'Autonoe', 'Callirrhoe', 'Charon', 'Despina', 'Enceladus', 'Erinome', 'Fenrir', 'Gacrux', 'Iapetus', 'Kore', 'Laomedeia', 'Leda', 'Orus', 'Puck', 'Pulcherrima', 'Rasalgethi', 'Sadachbia', 'Sadaltager', 'Schedar', 'Sulafat', 'Umbriel', 'Vindemiatrix', 'Zephyr', 'Zubenelgenubi'];
+const emotionPrompts = [
+    { label: 'Грубо', value: '(говорит грубо) ' },
+    { label: 'Нервно', value: '(говорит нервничая) ' },
+    { label: 'Тараторит', value: '(говорит быстро, тараторит) ' },
+    { label: 'Шепотом', value: '(говорит шепотом) ' },
+    { label: 'Восторженно', value: '(говорит восторженно) ' },
+    { label: 'Устало', value: '(говорит устало) ' },
+    { label: 'Зловеще', value: '(говорит зловеще) ' },
 ];
 
+// --- PAGE PROPS ---
+interface VoiceoverPageProps {
+  project: Project;
+  onUpdateProject: (project: Project) => void;
+}
 
-const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project }) => {
-    const [activeScene, setActiveScene] = useState<ProjectScene | null>(project.scenes[0] || null);
+const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project, onUpdateProject }) => {
+    // State
+    const [activeScenarioId, setActiveScenarioId] = useState<string>(mockScenarios[0].id);
+    const [activeExcerptId, setActiveExcerptId] = useState<string | null>(null);
     
-    // UI State
-    const [scriptText, setScriptText] = useState(project.scenes[0]?.script || '');
+    const [scriptText, setScriptText] = useState('');
     const [selectedVoice, setSelectedVoice] = useState(availableVoices[0]);
     const [isLoading, setIsLoading] = useState(false);
-    const [audioUrl, setAudioUrl] = useState<string | null>(null);
+    const [isMarkingStress, setIsMarkingStress] = useState(false);
+    const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    // State for the new scenarios sidebar
-    const [sidebarView, setSidebarView] = useState<'details' | 'list'>('list');
-    const [activeScenarioId, setActiveScenarioId] = useState<string>(mockScenarios[0].id);
     const activeScenario = mockScenarios.find(s => s.id === activeScenarioId);
+    const activeExcerpt = project.scenes.find(s => s.id === activeExcerptId);
 
-    useEffect(() => {
-        if (activeScene) {
-            setScriptText(activeScene.script);
-            if (audioUrl) URL.revokeObjectURL(audioUrl);
-            setAudioUrl(null);
-            setError(null);
-            // Don't set isLoading to false here, as it might be running
-        }
-    }, [activeScene]);
-
+    // Revoke object URLs on cleanup
     useEffect(() => {
         return () => {
-            if (audioUrl) URL.revokeObjectURL(audioUrl);
+            if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
+            // Also revoke history URLs when component unmounts
+            project.scenes.forEach(scene => {
+                scene.voiceoverHistory.forEach(h => URL.revokeObjectURL(h.url));
+            });
         };
-    }, [audioUrl]);
+    }, [currentAudioUrl, project.scenes]);
 
-    const handleSceneSelect = (scene: ProjectScene) => {
-        setActiveScene(scene);
+    const handleSelectExcerpt = useCallback((scene: ProjectScene) => {
+        setActiveExcerptId(scene.id);
+        setScriptText(scene.script);
+        setCurrentAudioUrl(null);
+        setError(null);
+    }, []);
+
+    const handleAddEmotion = (prompt: string) => {
+        // Remove existing prompts before adding a new one
+        const cleanText = scriptText.replace(/^\([\s\S]*?\)\s*/, '');
+        setScriptText(prompt + cleanText);
     };
-
-    const handleSceneClick = (sceneFromMock: { id: string; script: string }) => {
-        if (activeScenarioId === 'scen-001') {
-             const sceneToSelect = project.scenes.find(projScene => projScene.id === sceneFromMock.id);
-             if (sceneToSelect) {
-                handleSceneSelect(sceneToSelect);
-             } else {
-                 alert("This scene is not available in the current project data.");
-             }
-        } else {
-            alert("Voiceover for this scenario is not connected yet. Please select a scene from 'Project 001'.");
+    
+    const handleStressMarking = async () => {
+        if (!scriptText) return;
+        setIsMarkingStress(true);
+        setError(null);
+        try {
+            const textWithStress = await geminiService.addStressMarksToText(scriptText);
+            setScriptText(textWithStress);
+        } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : "Произошла неизвестная ошибка при расстановке ударений.";
+            setError(`Ошибка ударений: ${errorMessage}`);
+        } finally {
+            setIsMarkingStress(false);
         }
-    }
+    };
 
 
     const handleGenerate = async () => {
-        if (!scriptText) return;
+        if (!scriptText || !activeExcerpt) return;
 
         setIsLoading(true);
         setError(null);
-        if (audioUrl) URL.revokeObjectURL(audioUrl);
-        setAudioUrl(null);
+        if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
+        setCurrentAudioUrl(null);
 
         const audioChunks: Uint8Array[] = [];
         let audioMimeType: string | null = null;
         let totalLength = 0;
 
         try {
-            await geminiService.generateSpeechFromText(
-                scriptText,
-                selectedVoice,
-                (data, mimeType) => {
-                    if (!audioMimeType) audioMimeType = mimeType;
-                    audioChunks.push(data);
-                    totalLength += data.length;
-                }
-            );
+            await geminiService.generateSpeechFromText(scriptText, selectedVoice, (data, mimeType) => {
+                if (!audioMimeType) audioMimeType = mimeType;
+                audioChunks.push(data);
+                totalLength += data.length;
+            });
 
             if (audioChunks.length > 0 && audioMimeType) {
-                let finalBlob: Blob;
                 const mimeTypeLower = audioMimeType.toLowerCase();
-
+                let finalBlob: Blob;
                 if (mimeTypeLower.includes('audio/l16') || mimeTypeLower.includes('audio/l24') || mimeTypeLower.includes('audio/pcm')) {
                     const combinedData = new Uint8Array(totalLength);
                     let offset = 0;
-                    for (const chunk of audioChunks) {
-                        combinedData.set(chunk, offset);
-                        offset += chunk.length;
-                    }
+                    for (const chunk of audioChunks) combinedData.set(chunk, offset), offset += chunk.length;
                     const options = parseMimeType(audioMimeType);
                     const header = createWavHeader(combinedData.length, options);
                     finalBlob = new Blob([header, combinedData], { type: 'audio/wav' });
@@ -255,124 +176,144 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project }) => {
                     finalBlob = new Blob(audioChunks, { type: audioMimeType });
                 }
                 const url = URL.createObjectURL(finalBlob);
-                setAudioUrl(url);
+                setCurrentAudioUrl(url);
+
+                // --- UPDATE PROJECT HISTORY ---
+                const newHistoryItem = {
+                    id: Date.now().toString(),
+                    url: url,
+                    timestamp: new Date().toISOString(),
+                    voice: selectedVoice,
+                };
+
+                const updatedHistory = [newHistoryItem, ...activeExcerpt.voiceoverHistory].slice(0, 5);
+                
+                // Revoke URL of the oldest item if it's being removed
+                if (activeExcerpt.voiceoverHistory.length >= 5) {
+                    URL.revokeObjectURL(activeExcerpt.voiceoverHistory[4].url);
+                }
+
+                const updatedScene = { ...activeExcerpt, voiceoverHistory: updatedHistory };
+                const updatedScenes = project.scenes.map(s => s.id === updatedScene.id ? updatedScene : s);
+                onUpdateProject({ ...project, scenes: updatedScenes });
+                // --- END UPDATE ---
+
             } else {
-                 throw new Error("AI did not return any audio data.");
+                throw new Error("AI не вернул аудиоданные.");
             }
 
         } catch (err) {
-            console.error("Voiceover generation failed:", err);
-            const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
-            setError(`Failed to generate voiceover: ${errorMessage}`);
+            const errorMessage = err instanceof Error ? err.message : "Произошла неизвестная ошибка.";
+            try {
+                const parsedError = JSON.parse(errorMessage);
+                setError(`Ошибка: ${parsedError?.error?.message || "Не удалось разобрать ошибку."}`);
+            } catch {
+                setError(`Ошибка: ${errorMessage}`);
+            }
         } finally {
             setIsLoading(false);
         }
     };
-
+    
     return (
-        <div className="space-y-8">
+        <div className="space-y-6">
             <h1 className="text-3xl font-bold text-gray-100 border-b-2 border-purple-500/30 pb-2">Студия озвучки</h1>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Scene/Scenario List */}
-                <div className="lg:col-span-1 p-6 bg-gray-800 rounded-xl shadow-lg border border-gray-700 h-fit">
-                    {sidebarView === 'details' && activeScenario ? (
-                        <>
-                            <div className="flex items-center gap-3 mb-4 cursor-pointer" onClick={() => setSidebarView('list')}>
-                                <button className="p-1 text-purple-400 hover:text-purple-300">
-                                    <ArrowLeftIcon className="w-5 h-5" />
-                                </button>
-                                <h3 className="font-semibold text-purple-300 list-none truncate">{activeScenario.title}</h3>
-                            </div>
-                            <div className="pl-4 space-y-2 border-l-2 border-gray-700">
-                                {activeScenario.excerpts.map(excerpt => (
-                                     <details key={excerpt.id} open>
-                                        <summary className="font-medium text-gray-300 list-none cursor-pointer text-sm">{excerpt.title}</summary>
-                                        <div className="pl-4 mt-1 space-y-1 border-l-2 border-gray-600">
-                                            {excerpt.scenes.map((scene: any, index: number) => (
-                                                <div key={scene.id} onClick={() => handleSceneClick(scene)} className={`p-2 rounded-md cursor-pointer text-xs transition-colors ${activeScene?.id === scene.id ? 'bg-purple-800/50' : 'hover:bg-gray-700/50'}`}>
-                                                    <p className="font-bold">Сцена #{index + 1}</p>
-                                                    <p className="text-gray-400 truncate">{scene.script}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </details>
-                                ))}
-                            </div>
-                        </>
-                    ) : (
-                         <>
-                            <div className="flex justify-between items-center mb-4">
-                               <h3 className="text-xl font-semibold text-purple-300">Сценарии</h3>
-                               <button className="px-3 py-1 bg-indigo-600 text-sm rounded-md">Создать новый</button>
-                            </div>
-                            <div className="space-y-2">
-                               {[...mockScenarios].reverse().map(scenario => (
-                                <div key={scenario.id} onClick={() => { setActiveScenarioId(scenario.id); setSidebarView('details'); }} className="p-3 rounded-lg cursor-pointer hover:bg-gray-700/50 bg-gray-900/50">
-                                   <div className="flex justify-between items-center">
-                                       <p className="font-bold text-gray-200 truncate pr-2">{scenario.title}</p>
-                                       <span className={`px-2 py-0.5 text-xs font-semibold rounded-full whitespace-nowrap ${statusColors[scenario.status]}`}>
-                                           {scenario.status}
-                                       </span>
-                                   </div>
+            <div className="grid grid-cols-12 gap-6 h-[calc(100vh-200px)]">
+                {/* Scenarios Column */}
+                <div className="col-span-3 bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-4 flex flex-col">
+                    <h3 className="text-xl font-semibold text-purple-300 mb-4 flex-shrink-0">Сценарии</h3>
+                    <div className="space-y-2 overflow-y-auto pr-2 -mr-2">
+                        {[...mockScenarios].reverse().map(scenario => (
+                            <div key={scenario.id} onClick={() => { setActiveScenarioId(scenario.id); setActiveExcerptId(null); }} className={`p-3 rounded-lg cursor-pointer transition-colors ${activeScenarioId === scenario.id ? 'bg-purple-900/70' : 'hover:bg-gray-700/50 bg-gray-900/50'}`}>
+                                <div className="flex justify-between items-center">
+                                    <p className="font-bold text-gray-200 truncate pr-2">{scenario.title}</p>
+                                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full whitespace-nowrap ${statusColors[scenario.status]}`}>{scenario.status}</span>
                                 </div>
-                               ))}
                             </div>
-                         </>
-                    )}
+                        ))}
+                    </div>
                 </div>
 
-                {/* Voiceover Studio */}
-                <div className="lg:col-span-2 p-6 bg-gray-800 rounded-xl shadow-lg border border-gray-700 space-y-6">
-                    <div className="flex gap-6">
-                        {/* Main Content */}
-                        <div className="flex-grow space-y-4 flex flex-col">
-                             <div className="flex-grow flex flex-col">
+                {/* Excerpts & History Column */}
+                <div className="col-span-4 bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-4 flex flex-col">
+                    <h3 className="text-xl font-semibold text-purple-300 mb-4 flex-shrink-0">Отрывки из "{activeScenario?.title}"</h3>
+                    <div className="space-y-4 overflow-y-auto pr-2 -mr-2">
+                        {(activeScenarioId === 'scen-001' ? project.scenes : []).map((scene, index) => (
+                            <div key={scene.id} className={`p-3 rounded-lg transition-colors ${activeExcerptId === scene.id ? 'bg-gray-900/80 border border-purple-500/50' : 'bg-gray-900/50'}`}>
+                                <div onClick={() => handleSelectExcerpt(scene)} className="cursor-pointer">
+                                    <p className="font-bold text-gray-200">Отрывок #{index + 1}</p>
+                                    <p className="text-sm text-gray-400 mt-1 truncate">{scene.script}</p>
+                                </div>
+                                {scene.voiceoverHistory.length > 0 && (
+                                    <div className="mt-3 pt-3 border-t border-gray-700 space-y-2">
+                                        <h4 className="text-xs font-semibold text-gray-500 uppercase">Последние 5 дублей</h4>
+                                        {scene.voiceoverHistory.map(h => (
+                                            <div key={h.id} className="flex items-center gap-2">
+                                                <audio src={h.url} controls className="w-full h-8" />
+                                                <div className="text-xs text-gray-400 whitespace-nowrap w-12 text-right" title={new Date(h.timestamp).toLocaleString()}>{h.voice.substring(0,3)}...</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Workspace Column */}
+                <div className="col-span-5 bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-4 flex flex-col space-y-4">
+                    {!activeExcerpt ? (
+                        <div className="flex-grow flex items-center justify-center text-gray-500">Выберите отрывок для начала работы</div>
+                    ) : (
+                        <>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-400 mb-2">Инструменты</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {emotionPrompts.map(p => (
+                                        <button key={p.label} onClick={() => handleAddEmotion(p.value)} className="px-2 py-1 bg-gray-700 hover:bg-purple-700 rounded-md text-xs font-medium transition-colors">{p.label}</button>
+                                    ))}
+                                    <button
+                                        onClick={handleStressMarking}
+                                        disabled={isLoading || isMarkingStress || !scriptText}
+                                        className="px-3 py-1 bg-gray-700 hover:bg-indigo-700 rounded-md text-xs font-medium transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    >
+                                        {isMarkingStress ? <><Spinner size="h-4 w-4" />Обработка...</> : 'Поставить ударения (+)'}
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="flex-grow flex flex-col">
                                 <label className="text-sm font-medium text-gray-400 mb-1 block">Текст для озвучки</label>
                                 <textarea
                                     value={scriptText}
                                     onChange={(e) => setScriptText(e.target.value)}
                                     className="w-full p-2 bg-gray-900/50 rounded-md border border-gray-600 focus:ring-2 focus:ring-purple-500 flex-grow"
-                                    placeholder="Начните писать или вставьте текст для озвучки"
-                                    rows={10}
+                                    rows={8}
                                 />
                             </div>
-                             <div className="flex flex-wrap gap-4 items-center pt-4 border-t border-gray-700/60">
-                                <button onClick={handleGenerate} disabled={!scriptText || isLoading} className="px-6 py-2 bg-purple-600 hover:bg-purple-700 rounded-md font-semibold transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed flex items-center justify-center gap-2">
-                                    {isLoading ? <><Spinner /> Генерируем...</> : 'Сгенерировать'}
-                                </button>
+                             <div className="flex items-center gap-4">
+                                <div>
+                                    <label htmlFor="voice-select" className="block text-sm text-gray-300 mb-1">Голос</label>
+                                    <select id="voice-select" value={selectedVoice} onChange={e => setSelectedVoice(e.target.value)} className="w-full p-2 bg-gray-700 rounded-md border border-gray-500 focus:ring-2 focus:ring-purple-500" disabled={isLoading}>
+                                        {availableVoices.map(voice => <option key={voice} value={voice}>{voice}</option>)}
+                                    </select>
+                                </div>
+                                <div className="flex-grow pt-6">
+                                    <button onClick={handleGenerate} disabled={!scriptText || isLoading} className="w-full px-6 py-2 bg-purple-600 hover:bg-purple-700 rounded-md font-semibold transition-colors disabled:bg-gray-500 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                                        {isLoading ? <><Spinner size="h-5 w-5" /> Генерируем...</> : 'Сгенерировать'}
+                                    </button>
+                                </div>
                             </div>
                             <div className="h-24">
-                                {error && <p className="text-red-400 text-sm">{error}</p>}
-                                {audioUrl && !isLoading && (
-                                    <div className="mt-4">
-                                        <h4 className="text-md font-semibold text-gray-300 mb-2">Результат:</h4>
-                                        <audio controls src={audioUrl} className="w-full" />
+                                {error && <p className="text-red-400 text-sm p-2 bg-red-900/20 rounded-md">{error}</p>}
+                                {currentAudioUrl && !isLoading && (
+                                    <div className="mt-2">
+                                        <h4 className="text-md font-semibold text-gray-300 mb-2">Текущий результат:</h4>
+                                        <audio controls autoPlay src={currentAudioUrl} className="w-full" />
                                     </div>
                                 )}
                             </div>
-                        </div>
-                        {/* Settings Sidebar */}
-                        <aside className="w-64 flex-shrink-0 space-y-6">
-                             <div>
-                                <label className="text-sm font-medium text-gray-400 mb-2 block">Настройки голоса</label>
-                                <div className="p-4 bg-gray-900/50 rounded-md border border-gray-600 space-y-4">
-                                     <div>
-                                        <label htmlFor="voice-select" className="block text-sm text-gray-300 mb-1">Голос</label>
-                                        <select 
-                                            id="voice-select"
-                                            value={selectedVoice}
-                                            onChange={e => setSelectedVoice(e.target.value)}
-                                            className="w-full p-2 bg-gray-700 rounded-md border border-gray-500 focus:ring-2 focus:ring-purple-500"
-                                            disabled={isLoading}
-                                        >
-                                            {availableVoices.map(voice => <option key={voice} value={voice}>{voice}</option>)}
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-                        </aside>
-                    </div>
+                        </>
+                    )}
                 </div>
             </div>
         </div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Project, ProjectScene } from '../types';
+import { Project, ProjectScene, ProcessItem } from '../types';
 import * as geminiService from '../services/geminiService';
+import * as supabaseService from '../services/supabaseService';
 import Spinner from '../components/Spinner';
 
 // --- ICONS ---
@@ -14,73 +15,107 @@ const SaveIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
 );
 
+// --- DATA TYPES & HELPERS ---
+interface ArtScenario {
+    id: string;
+    title: string;
+    status: 'В работе' | 'Архив';
+    excerpts: {
+        id: string;
+        title: string;
+        scenes: ProjectScene[];
+    }[];
+}
 
-// --- MOCK DATA ---
-type ScenarioStatus = 'Опубликовано' | 'В работе' | 'В ящик';
-const mockScenarios: { id: string; title: string; excerpts: any[]; status: ScenarioStatus }[] = [
-    {
-        id: 'scen-001',
-        title: 'Сценарий №001: Project 001: Neon City',
-        status: 'В работе',
-        excerpts: [{
-            id: 'ex-1-1',
-            title: 'Отрывок #1',
-            scenes: [
-                { id: 'scene-1', script: 'A solitary figure stands on a neon-lit rooftop, cinematic shot...' },
-                { id: 'scene-2', script: 'Close up on the figure pulling up their collar, face hidden in shadow...' },
-                { id: 'scene-3', script: 'Wide shot of a flying vehicle zipping past in the distance...' },
-            ]
-        }]
-    },
-    {
-        id: 'scen-002',
-        title: 'Сценарий №002: Forgotten Kingdom',
-        status: 'В ящик',
-        excerpts: [
-            { id: 'ex-2-1', title: 'Отрывок #1', scenes: [{ id: 'scene-2-1-1', script: 'Ancient ruins overgrown with glowing flora...' }] },
-            { id: 'ex-2-2', title: 'Отрывок #2', scenes: [{ id: 'scene-2-2-1', script: 'A lone explorer discovers a hidden artifact...' }] },
-        ]
-    },
-    {
-        id: 'scen-003',
-        title: 'Сценарий №003: Deep Space Anomaly',
-        status: 'Опубликовано',
-        excerpts: [{
-            id: 'ex-3-1',
-            title: 'Отрывок #1',
-            scenes: [
-                { id: 'scene-3-1-1', script: 'The spaceship approaches a swirling nebula...' },
-                { id: 'scene-3-1-2', script: 'Interior shot, the crew looks at the viewscreen in awe...' },
-            ]
-        }]
-    },
-    {
-        id: 'scen-004',
-        title: 'Сценарий №004: Steampunk Detective',
-        status: 'В работе',
-        excerpts: [
-            { id: 'ex-4-1', title: 'Отрывок #1', scenes: [{ id: 'scene-4-1-1', script: 'A cobblestone street shrouded in fog, gaslights flickering...' }] },
-            { id: 'ex-4-2', title: 'Отрывок #2', scenes: [{ id: 'scene-4-2-1', script: 'The detective examines a clue with a magnifying glass...' }] },
-        ]
-    },
-    {
-        id: 'scen-005',
-        title: 'Сценарий №005: Whispering Forest',
-        status: 'В работе',
-        excerpts: [{
-            id: 'ex-5-1',
-            title: 'Отрывок #1',
-            scenes: [
-                { id: 'scene-5-1-1', script: 'Sunlight filtering through a dense, magical forest canopy...' },
-                { id: 'scene-5-1-2', script: 'A mythical creature peeks from behind an ancient tree...' },
-            ]
-        }]
-    }
-];
-const statusColors: Record<ScenarioStatus, string> = {
-    'Опубликовано': 'bg-green-500/20 text-green-300 border border-green-500/30',
+const statusColors: Record<ArtScenario['status'], string> = {
     'В работе': 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30',
-    'В ящик': 'bg-gray-500/20 text-gray-400 border border-gray-500/30',
+    'Архив': 'bg-green-500/20 text-green-300 border border-green-500/30',
+};
+
+// This function parses the Prompter's output into distinct scenes
+const parsePromptsToScenes = (promptContent: string, scenarioId: string): ProjectScene[] => {
+    if (!promptContent) return [];
+    
+    // Regex to capture scenes, including Thumb/Обложка variations
+    const sceneRegex = /(\*\*Кадр \d+:\*\*|\*\*Сцена \d+:\*\*|Thumb:|Обложка:)([\s\S]*?)(?=\*\*Кадр|\*\*Сцена|Thumb:|Обложка:|$)/g;
+    
+    const scenes: ProjectScene[] = [];
+    let match;
+    let sceneIndex = 1;
+
+    while ((match = sceneRegex.exec(promptContent)) !== null) {
+        const scriptText = (match[1] + match[2]).trim();
+        if (scriptText) {
+            scenes.push({
+                id: `${scenarioId}-scene-${sceneIndex++}`,
+                script: scriptText,
+                baseImage: null,
+                generatedImage: null,
+                isProcessingImage: false,
+                generatedVideoUrl: null,
+                isProcessingVideo: false,
+                voiceoverHistory: [],
+            });
+        }
+    }
+
+    // Fallback if regex fails: treat each paragraph as a scene
+    if (scenes.length === 0) {
+        return promptContent.split('\n\n')
+            .map(s => s.trim())
+            .filter(Boolean)
+            .map((script, index) => ({
+                id: `${scenarioId}-scene-${index + 1}`,
+                script,
+                baseImage: null,
+                generatedImage: null,
+                isProcessingImage: false,
+                generatedVideoUrl: null,
+                isProcessingVideo: false,
+                voiceoverHistory: [],
+            }));
+    }
+    
+    return scenes;
+};
+
+
+const transformProcessItemsToScenarios = (items: ProcessItem[]): ArtScenario[] => {
+    const archivedItems = items.filter(item => item.is_archived);
+    const scenarios: ArtScenario[] = [];
+
+    // Find script items to act as the base for scenarios
+    const scriptItems = archivedItems.filter(item => item.type === 'script');
+
+    scriptItems.forEach(scriptItem => {
+        // Find the original topic title for a cleaner scenario name
+        const topicMatch = archivedItems.find(
+          item => item.type === 'topic' && scriptItem.title.includes(item.title)
+        );
+        const scenarioTitle = topicMatch ? topicMatch.title : scriptItem.title.replace('Сценарий по: ', '');
+        
+        // Find the corresponding prompt item
+        const promptItem = archivedItems.find(
+            item => item.type === 'prompt' && item.title.includes(scriptItem.title)
+        );
+        
+        const scenes = promptItem ? parsePromptsToScenes(promptItem.content, scriptItem.id) : [];
+
+        if (scenes.length > 0) {
+             scenarios.push({
+                id: scriptItem.id,
+                title: scenarioTitle,
+                status: 'Архив',
+                excerpts: [{
+                    id: `${scriptItem.id}-ex`,
+                    title: 'Сцены из промптера',
+                    scenes: scenes
+                }]
+            });
+        }
+    });
+
+    return scenarios;
 };
 
 
@@ -197,31 +232,68 @@ const VideoPreview: React.FC<VideoPreviewProps> = ({ scene, onGenerate, onSave, 
 
 // --- ART STUDIO PAGE ---
 interface ArtStudioPageProps {
-  project: Project;
+  project: Project; // This prop might be deprecated if we manage projects internally now
   onUpdateProject: (project: Project) => void;
 }
 
 const ArtStudioPage: React.FC<ArtStudioPageProps> = ({ project, onUpdateProject }) => {
-    const [activeSceneId, setActiveSceneId] = useState<string | null>(project.scenes[0]?.id || null);
+    const [scenarios, setScenarios] = useState<ArtScenario[]>([]);
+    const [activeProject, setActiveProject] = useState<Project | null>(null);
+    const [activeSceneId, setActiveSceneId] = useState<string | null>(null);
     const [imagePrompt, setImagePrompt] = useState('');
     const [animationPrompt, setAnimationPrompt] = useState('');
     const [sidebarView, setSidebarView] = useState<'details' | 'list'>('list');
-    const [activeScenarioId, setActiveScenarioId] = useState<string>(mockScenarios[0].id);
+    const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
+    const [isFetching, setIsFetching] = useState(true);
 
-    const activeScenario = mockScenarios.find(s => s.id === activeScenarioId);
-    const activeScene = project.scenes.find(s => s.id === activeSceneId);
+    const activeScenario = scenarios.find(s => s.id === activeScenarioId);
+    const activeScene = activeProject?.scenes.find(s => s.id === activeSceneId);
 
+    // Fetch and process data from Supabase on mount
     useEffect(() => {
-        // Find the script from mock data if the active scene exists in the mock scenario
-        // This is a bridge between the prop data (project) and local mock data
-        const sceneFromMock = activeScenario?.excerpts.flatMap(e => e.scenes).find(s => s.id === activeSceneId);
-        setImagePrompt(sceneFromMock?.script || activeScene?.script || 'A beautiful, detailed image.');
-    }, [activeSceneId, activeScenario, activeScene]);
+        const loadScenarios = async () => {
+            setIsFetching(true);
+            try {
+                const items = await supabaseService.getProcessItems();
+                const processedScenarios = transformProcessItemsToScenarios(items);
+                setScenarios(processedScenarios);
+            } catch (error) {
+                console.error("Failed to load scenarios:", error);
+                alert("Не удалось загрузить сценарии для Художки.");
+            } finally {
+                setIsFetching(false);
+            }
+        };
+        loadScenarios();
+    }, []);
+
+    // Effect to update the image prompt when the active scene changes
+    useEffect(() => {
+        setImagePrompt(activeScene?.script || '');
+    }, [activeScene]);
     
+    // When a scenario is selected from the list
+    const handleSelectScenario = (scenario: ArtScenario) => {
+        setActiveScenarioId(scenario.id);
+        const projectScenes = scenario.excerpts.flatMap(e => e.scenes);
+        setActiveProject({
+            id: scenario.id,
+            title: scenario.title,
+            rawScript: '', // Not needed in art studio
+            scenes: projectScenes,
+        });
+        setActiveSceneId(projectScenes[0]?.id || null);
+        setSidebarView('details');
+    };
+
     const updateScene = useCallback((updatedScene: ProjectScene) => {
-        const updatedScenes = project.scenes.map(s => s.id === updatedScene.id ? updatedScene : s);
-        onUpdateProject({ ...project, scenes: updatedScenes });
-    }, [project, onUpdateProject]);
+        if (!activeProject) return;
+        const updatedScenes = activeProject.scenes.map(s => s.id === updatedScene.id ? updatedScene : s);
+        const updatedProject = { ...activeProject, scenes: updatedScenes };
+        setActiveProject(updatedProject);
+        // Optionally call onUpdateProject if communication with App.tsx is still needed
+        // onUpdateProject(updatedProject);
+    }, [activeProject]);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (!activeScene) return;
@@ -248,11 +320,9 @@ const ArtStudioPage: React.FC<ArtStudioPageProps> = ({ project, onUpdateProject 
             let generatedDataUrl: string;
 
             if (activeScene.baseImage) {
-                // Edit mode: use the reference image
                 const base64Data = activeScene.baseImage.dataUrl.split(',')[1];
                 generatedDataUrl = await geminiService.editImage(base64Data, activeScene.baseImage.mimeType, imagePrompt);
             } else {
-                // Generation mode: use only the prompt
                 generatedDataUrl = await geminiService.generateImageFromPrompt(imagePrompt);
             }
 
@@ -290,30 +360,20 @@ const ArtStudioPage: React.FC<ArtStudioPageProps> = ({ project, onUpdateProject 
     }
     
     const handleSaveAndContinue = () => {
-        if (!activeScene) return;
+        if (!activeScene || !activeProject) return;
 
-        const currentSceneIndex = project.scenes.findIndex(s => s.id === activeScene.id);
+        const currentSceneIndex = activeProject.scenes.findIndex(s => s.id === activeScene.id);
         alert(`Сцена ${currentSceneIndex + 1} сохранена!`);
 
         const nextSceneIndex = currentSceneIndex + 1;
-        if (nextSceneIndex < project.scenes.length) {
-            setActiveSceneId(project.scenes[nextSceneIndex].id);
+        if (nextSceneIndex < activeProject.scenes.length) {
+            setActiveSceneId(activeProject.scenes[nextSceneIndex].id);
             setAnimationPrompt(''); // Reset animation prompt for next scene
         } else {
             alert('Все сцены обработаны. Проект завершен!');
             setActiveSceneId(null);
         }
     };
-
-    const handleSceneClick = (sceneId: string) => {
-        // Only allow selecting scenes from the first (active) project for now
-        if (activeScenarioId === 'scen-001') {
-             setActiveSceneId(sceneId);
-        } else {
-            alert("Editing for this scenario is not connected yet. Please select a scene from 'Project 001'.");
-        }
-    }
-
 
     return (
         <div className="space-y-8">
@@ -331,11 +391,11 @@ const ArtStudioPage: React.FC<ArtStudioPageProps> = ({ project, onUpdateProject 
                             </div>
                             <div className="pl-4 space-y-2 border-l-2 border-gray-700">
                                 {activeScenario.excerpts.map(excerpt => (
-                                     <details key={excerpt.id}>
+                                     <details key={excerpt.id} open>
                                         <summary className="font-medium text-gray-300 list-none cursor-pointer text-sm">{excerpt.title}</summary>
                                         <div className="pl-4 mt-1 space-y-1 border-l-2 border-gray-600">
                                             {excerpt.scenes.map((scene, index) => (
-                                                <div key={scene.id} onClick={() => handleSceneClick(scene.id)} className={`p-2 rounded-md cursor-pointer text-xs transition-colors ${activeSceneId === scene.id ? 'bg-purple-800/50' : 'hover:bg-gray-700/50'}`}>
+                                                <div key={scene.id} onClick={() => setActiveSceneId(scene.id)} className={`p-2 rounded-md cursor-pointer text-xs transition-colors ${activeSceneId === scene.id ? 'bg-purple-800/50' : 'hover:bg-gray-700/50'}`}>
                                                     <p className="font-bold">Сцена #{index + 1}</p>
                                                     <p className="text-gray-400 truncate">{scene.script}</p>
                                                 </div>
@@ -343,34 +403,28 @@ const ArtStudioPage: React.FC<ArtStudioPageProps> = ({ project, onUpdateProject 
                                         </div>
                                     </details>
                                 ))}
-                                 <details>
-                                    <summary className="font-medium text-gray-300 list-none cursor-pointer text-sm">Обложка</summary>
-                                    <div className="pl-4 mt-1 flex gap-2 pt-1">
-                                       <button onClick={() => setImagePrompt(`${activeScenario?.title} cover art, variant A, cinematic movie poster, high detail`)} className="flex-1 text-sm py-1 bg-gray-700 hover:bg-purple-700 rounded-md transition-colors">А</button>
-                                       <button onClick={() => setImagePrompt(`${activeScenario?.title} cover art, variant B, minimalist design, key visual`)} className="flex-1 text-sm py-1 bg-gray-700 hover:bg-purple-700 rounded-md transition-colors">Б</button>
-                                       <button onClick={() => setImagePrompt(`${activeScenario?.title} cover art, variant C, epic illustration, dynamic composition`)} className="flex-1 text-sm py-1 bg-gray-700 hover:bg-purple-700 rounded-md transition-colors">В</button>
-                                    </div>
-                                </details>
                             </div>
                         </>
                     ) : (
                          <>
                             <div className="flex justify-between items-center mb-4">
-                               <h3 className="text-xl font-semibold text-purple-300">Сценарии</h3>
-                               <button className="px-3 py-1 bg-indigo-600 text-sm rounded-md">Создать новый</button>
+                               <h3 className="text-xl font-semibold text-purple-300">Сценарии в работе</h3>
                             </div>
-                            <div className="space-y-2">
-                               {[...mockScenarios].reverse().map(scenario => (
-                                <div key={scenario.id} onClick={() => { setActiveScenarioId(scenario.id); setSidebarView('details'); }} className="p-3 rounded-lg cursor-pointer hover:bg-gray-700/50 bg-gray-900/50">
-                                   <div className="flex justify-between items-center">
-                                       <p className="font-bold text-gray-200 truncate pr-2">{scenario.title}</p>
-                                       <span className={`px-2 py-0.5 text-xs font-semibold rounded-full whitespace-nowrap ${statusColors[scenario.status]}`}>
-                                           {scenario.status}
-                                       </span>
-                                   </div>
+                            {isFetching ? <Spinner/> : (
+                                <div className="space-y-2">
+                                    {scenarios.length === 0 && <p className="text-gray-500 text-center text-sm py-4">Нет готовых сценариев в архиве.</p>}
+                                    {[...scenarios].reverse().map(scenario => (
+                                        <div key={scenario.id} onClick={() => handleSelectScenario(scenario)} className="p-3 rounded-lg cursor-pointer hover:bg-gray-700/50 bg-gray-900/50">
+                                        <div className="flex justify-between items-center">
+                                            <p className="font-bold text-gray-200 truncate pr-2">{scenario.title}</p>
+                                            <span className={`px-2 py-0.5 text-xs font-semibold rounded-full whitespace-nowrap ${statusColors[scenario.status]}`}>
+                                                {scenario.status}
+                                            </span>
+                                        </div>
+                                        </div>
+                                    ))}
                                 </div>
-                               ))}
-                            </div>
+                            )}
                          </>
                     )}
                 </div>
@@ -379,7 +433,7 @@ const ArtStudioPage: React.FC<ArtStudioPageProps> = ({ project, onUpdateProject 
                     {activeScene ? (
                         <>
                             <div>
-                                <h3 className="text-xl font-semibold text-purple-300 mb-4">Редактор: Сцена {project.scenes.findIndex(s => s.id === activeScene.id) + 1}</h3>
+                                <h3 className="text-xl font-semibold text-purple-300 mb-4">Редактор: Сцена {activeProject?.scenes.findIndex(s => s.id === activeScene.id) + 1}</h3>
                                 <div className="flex flex-col md:flex-row gap-4 items-center">
                                     {/* Reference Image */}
                                     <div className="w-full">
@@ -429,7 +483,7 @@ const ArtStudioPage: React.FC<ArtStudioPageProps> = ({ project, onUpdateProject 
                         </>
                     ) : (
                         <div className="flex items-center justify-center h-full min-h-[400px]">
-                            <p className="text-gray-500">Выберите сцену для начала работы.</p>
+                            <p className="text-gray-500">Выберите сценарий для начала работы.</p>
                         </div>
                     )}
                 </div>

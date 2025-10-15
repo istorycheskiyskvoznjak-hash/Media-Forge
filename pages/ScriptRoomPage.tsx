@@ -1,6 +1,5 @@
 
-
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 // FIX: Import ProcessItem from the shared types file.
 import { Project, ChatMessage, ProcessItem } from '../types';
 import * as geminiService from '../services/geminiService';
@@ -23,15 +22,22 @@ const XCircleIcon: React.FC<{ className?: string }> = ({ className }) => (
         <path strokeLinecap="round" strokeLinejoin="round" d="m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
     </svg>
 );
+const TrashIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}><path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>
+);
 const ArrowUpCircleIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
         <path strokeLinecap="round" strokeLinejoin="round" d="m9 9 6-6m0 0 6 6m-6-6v12a6 6 0 0 1-12 0v-3" />
     </svg>
 );
-const ArchiveBoxIcon: React.FC<{ className?: string }> = ({ className }) => (
+const ArrowPathIcon: React.FC<{ className?: string }> = ({ className }) => (
     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4" />
-        <path strokeLinecap="round" strokeLinejoin="round" d="M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 11.664 0M2.985 19.644a8.25 8.25 0 0 1 11.664 0m0 0a8.25 8.25 0 0 0 3.181-11.664m-14.845 0L7.488 9.348" />
+    </svg>
+);
+const CheckCircleIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className={className}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
     </svg>
 );
 
@@ -78,7 +84,8 @@ const DEEP_RESEARCH_INSTRUCTION = `DEEP RESEARCH — Исследование д
 Стараться без домыслов и если есть возможность прикрепить факт, то нужно это делать.
 На спорное — желательно два источника (академия/первичка + сильный обзор). Но не обязательно.
 // FIX: Corrected typo in the instruction string.
-Если не хватает источников — можешь себе позволить додумывать, то чтобы только целая картинка оставалась логичной и не выбивалась из контекста: пометь строку в facts.csv как нужно доп.подтверждение.
+// FIX: Corrected a typo in the instruction string. "то чтобы" changed to "чтобы".
+Если не хватает источников — можешь себе позволить додумывать, чтобы только целая картинка оставалась логичной и не выбивалась из контекста: пометь строку в facts.csv как нужно доп.подтверждение.
 
 Стиль: «пабный историк» — коротко, рублено, по делу. С эвфемизмами, но без операционки к нарушениям закона. Разговор на лавочке, пьяный дед рассказывает во дворе на скамейке историю для дворовых пацанов. Много слов-паразитов, много «умных слов», но общаться, как с тупым. Твоя задача — считать, что я тупой, и максимально просто донести сложную мысль всего нашего расследования. А я, как самый тупой, смогу сказать, поймут ли другие тупые наше видео.
 `;
@@ -93,6 +100,7 @@ Research — конспект исследования
 Разговорно, живо, без академической занудности.
 Короткие фразы, ритм, паузы, интрига через троеточия.
 Сленг и ирония уместны, но без мата и без пустой бравады.
+// FIX: Corrected a typo in the instruction string.
 // FIX: Corrected a typo in the instruction string.
 В каждом отрывке есть хук, одна мысль/удар, микро-вывод.
 В финале сценария — мостик в сегодня: «зачем знать сейчас».
@@ -135,7 +143,15 @@ interface Agent {
     commands: Command[];
 }
 
-// FIX: Removed local ProcessItem definition. It's now imported from types.ts.
+interface Scenario {
+  id: string; // The UUID for the scenario
+  title: string;
+  sequence: number;
+  items: ProcessItem[];
+  isArchived: boolean;
+}
+
+const TYPE_ORDER: ProcessItem['type'][] = ['topic', 'deep_research', 'research', 'script', 'prompt'];
 
 const agents: Agent[] = [
     { id: 'angle', name: 'Точка Зрения', description: 'Генерирует острые темы и хуки', systemInstruction: ANGLE_INSTRUCTION, commands: [
@@ -171,68 +187,97 @@ interface ScriptRoomPageProps {
 const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProject }) => {
     const [activeAgent, setActiveAgent] = useState<Agent>(agents[0]);
     const [chatHistories, setChatHistories] = useState<Record<string, ChatMessage[]>>({});
-    const [processItems, setProcessItems] = useState<ProcessItem[]>([]);
+    const [scenarios, setScenarios] = useState<Scenario[]>([]);
+    const [activeScenarioId, setActiveScenarioId] = useState<string | null>(null);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [isFetching, setIsFetching] = useState(true);
     const [expandedCommand, setExpandedCommand] = useState<string | null>(null);
-    const [archiveConfirmation, setArchiveConfirmation] = useState<{ content: string; title: string; type: ProcessItem['type'] } | null>(null);
-    const [isArchiving, setIsArchiving] = useState(false);
-    const [isArchivingProcess, setIsArchivingProcess] = useState(false);
-    const [showPrompterAddButton, setShowPrompterAddButton] = useState(false);
     
     const messagesEndRef = useRef<null | HTMLDivElement>(null);
-    const messageRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
     const prevIsLoadingRef = useRef<boolean>();
+    const messageRefs = useRef<Map<number, HTMLDivElement | null>>(new Map());
     
     const currentMessages = chatHistories[activeAgent.id] || [];
 
+    const { activeScenarios, archivedScenarios } = useMemo(() => {
+        const active: Scenario[] = [];
+        const archived: Scenario[] = [];
+        scenarios.forEach(s => (s.isArchived ? archived.push(s) : active.push(s)));
+        active.sort((a, b) => a.sequence - b.sequence);
+        archived.sort((a, b) => b.sequence - a.sequence);
+        return { activeScenarios: active, archivedScenarios: archived };
+    }, [scenarios]);
+
+
     // --- DATA FETCHING & PERSISTENCE ---
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const [items, histories] = await Promise.all([
-                    supabaseService.getProcessItems(),
-                    supabaseService.getChatHistories(),
-                ]);
-                setProcessItems(items);
-                setChatHistories(histories);
-            } catch (error) {
-                console.error("Failed to load data from Supabase:", error);
-                alert("Не удалось загрузить данные. Проверьте консоль для получения дополнительной информации.");
-            } finally {
-                setIsFetching(false);
+    const fetchData = useCallback(async () => {
+        setIsFetching(true);
+        try {
+            const [items, histories] = await Promise.all([
+                supabaseService.getProcessItems(),
+                supabaseService.getChatHistories(),
+            ]);
+            
+            const scenarioMap = new Map<string, ProcessItem[]>();
+            items.forEach(item => {
+                if (item.scenarioId) {
+                    if (!scenarioMap.has(item.scenarioId)) {
+                        scenarioMap.set(item.scenarioId, []);
+                    }
+                    scenarioMap.get(item.scenarioId)!.push(item);
+                }
+            });
+
+            const allScenarios: Scenario[] = [];
+            let maxSequence = 0;
+
+            scenarioMap.forEach((scenarioItems, scenarioId) => {
+                const firstItem = scenarioItems[0];
+                const title = firstItem.scenarioTitle || "Без названия";
+                const isArchived = scenarioItems.every(i => i.is_archived);
+                const sequenceMatch = title.match(/^(\d+)#/);
+                const sequence = sequenceMatch ? parseInt(sequenceMatch[1], 10) : 0;
+                if (sequence > maxSequence) maxSequence = sequence;
+                
+                scenarioItems.sort((a, b) => TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type));
+
+                allScenarios.push({
+                    id: scenarioId,
+                    title,
+                    sequence,
+                    items: scenarioItems,
+                    isArchived
+                });
+            });
+            
+            (window as any).__MAX_SCENARIO_SEQUENCE = maxSequence;
+
+            setScenarios(allScenarios);
+            
+            if (Object.keys(histories).length > 0) {
+                 setChatHistories(histories);
             }
-        };
-        fetchData();
+        } catch (error) {
+            console.error("Failed to load data from Supabase:", error);
+            alert("Не удалось загрузить данные. Проверьте консоль для получения дополнительной информации.");
+        } finally {
+            setIsFetching(false);
+        }
     }, []);
 
-    // Effect to save chat history and trigger archive confirmation
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
     useEffect(() => {
         const prevIsLoading = prevIsLoadingRef.current;
-        if (prevIsLoading && !isLoading) { // Stream just finished
+        if (prevIsLoading && !isLoading) { 
             const currentHistory = chatHistories[activeAgent.id];
             if (currentHistory && currentHistory.length > 0) {
                 supabaseService.saveChatHistory(activeAgent.id, currentHistory)
                     .catch(e => console.error(`Failed to save history for ${activeAgent.id}`, e));
-                
-                const lastMessage = currentHistory[currentHistory.length - 1];
-                const secondLastMessage = currentHistory[currentHistory.length - 2];
-
-                // Trigger confirmation for Prompter
-                if (
-                    activeAgent.id === 'prompter' &&
-                    lastMessage.role === 'model' &&
-                    secondLastMessage?.role === 'user' &&
-                    (secondLastMessage.text.includes('/eat') || secondLastMessage.text.includes('/export'))
-                ) {
-                    setArchiveConfirmation({
-                        content: lastMessage.text,
-                        title: `Визуал: ${secondLastMessage.text.replace(/\/(eat|export)/, '').trim().substring(0, 40)}...`,
-                        type: 'script', // Re-using script type for visual output
-                    });
-                }
             }
         }
         prevIsLoadingRef.current = isLoading;
@@ -257,7 +302,6 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
         const userMessage: ChatMessage = { role: 'user', text: input };
         const newHistory = [...currentMessages, userMessage];
 
-        // Optimistically update UI and save user message immediately
         setChatHistories(prev => ({ ...prev, [activeAgent.id]: newHistory }));
         supabaseService.saveChatHistory(activeAgent.id, newHistory)
             .catch(e => console.error(`Failed to save user message for ${activeAgent.id}`, e));
@@ -266,8 +310,7 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
         setIsLoading(true);
         setExpandedCommand(null);
 
-        // Add a temporary empty message for the model's response
-        setChatHistories(prev => ({ ...prev, [activeAgent.id]: [...prev[activeAgent.id], { role: 'model', text: '' }] }));
+        setChatHistories(prev => ({ ...prev, [activeAgent.id]: [...(prev[activeAgent.id] || []), { role: 'model', text: '' }] }));
 
         try {
             await geminiService.streamChatResponse(
@@ -276,7 +319,10 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
                     setChatHistories(prev => {
                         const histories = { ...prev };
                         const currentAgentHistory = [...histories[activeAgent.id]];
-                        currentAgentHistory[currentAgentHistory.length - 1].text += chunk;
+                        const lastMessage = currentAgentHistory[currentAgentHistory.length - 1];
+                        if (lastMessage) {
+                            lastMessage.text += chunk;
+                        }
                         histories[activeAgent.id] = currentAgentHistory;
                         return histories;
                     });
@@ -288,8 +334,11 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
             setChatHistories(prev => {
                  const histories = { ...prev };
                  const currentAgentHistory = [...histories[activeAgent.id]];
+                 const lastMessage = currentAgentHistory[currentAgentHistory.length - 1];
                  const errorText = error instanceof Error ? error.message : String(error);
-                 currentAgentHistory[currentAgentHistory.length - 1].text = `Извините, произошла ошибка: ${errorText}`;
+                 if(lastMessage) {
+                    lastMessage.text = `Извините, произошла ошибка: ${errorText}`;
+                 }
                  histories[activeAgent.id] = currentAgentHistory;
                  return histories;
             });
@@ -304,36 +353,65 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
             handleSend();
         }
     };
+    
+    const handleCreateScenario = () => {
+        const newTitle = window.prompt("Введите название нового сценария:");
+        if (!newTitle || !newTitle.trim()) {
+            return;
+        }
 
-    const handleAddToProcess = async (content: string, titleOverride?: string, type: ProcessItem['type'] = 'deep_research') => {
-        // FIX: Using window.prompt to be explicit and avoid potential name clashes.
-        const title = titleOverride || window.prompt("Введите название для этого элемента процесса:", "Новый элемент");
-        if (title) {
-             const isDuplicate = processItems.some(item => item.title.trim() === title.trim() && item.type === type);
-            if (isDuplicate) {
-                console.warn(`Item "${title}" already exists in process list.`);
-                return;
-            }
-            try {
-                const newItemData: Omit<ProcessItem, 'id'> = {
-                    title,
-                    content,
-                    sourceAgentId: activeAgent.id,
-                    type,
-                };
-                const savedItem = await supabaseService.addProcessItem(newItemData);
-                setProcessItems(prev => [...prev, savedItem]);
-            } catch (error) {
-                console.error("Failed to add process item:", error);
-                alert("Не удалось сохранить элемент процесса.");
-            }
+        const nextSequence = ((window as any).__MAX_SCENARIO_SEQUENCE || 0) + 1;
+        (window as any).__MAX_SCENARIO_SEQUENCE = nextSequence;
+
+        const scenarioId = crypto.randomUUID();
+        const scenarioTitle = `${String(nextSequence).padStart(3, '0')}#${newTitle.trim()}`;
+
+        const newScenario: Scenario = {
+            id: scenarioId,
+            title: scenarioTitle,
+            sequence: nextSequence,
+            items: [],
+            isArchived: false,
+        };
+
+        setScenarios(prev => [...prev, newScenario]);
+        setActiveScenarioId(scenarioId);
+    };
+
+    const handleAddToProcess = async (content: string, titleOverride?: string, type: ProcessItem['type'] = 'deep_research'): Promise<ProcessItem | null> => {
+        const activeScenario = scenarios.find(s => s.id === activeScenarioId);
+
+        if (!activeScenario) {
+            alert("Пожалуйста, сначала создайте или выберите сценарий.");
+            return null;
+        }
+        
+        const scenarioId = activeScenario.id;
+        const scenarioTitle = activeScenario.title;
+        const title = titleOverride || `Элемент ${type}`;
+    
+        try {
+            const newItemData: Omit<ProcessItem, 'id' | 'is_archived'> = {
+                title, content, sourceAgentId: activeAgent.id, type, scenarioId, scenarioTitle
+            };
+            const savedItem = await supabaseService.addProcessItem(newItemData);
+            await fetchData(); // Refresh data to show the new item
+            return savedItem;
+        } catch (error) {
+            console.error("Failed to add process item:", error);
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            alert(`Не удалось сохранить элемент процесса: ${errorMessage}`);
+            return null;
         }
     };
 
     const handleDeleteProcessItem = async (itemId: string) => {
+        const confirmed = window.confirm("Вы уверены, что хотите безвозвратно удалить этот элемент?");
+        if (!confirmed) return;
+        
         try {
             await supabaseService.deleteProcessItem(itemId);
-            setProcessItems(prev => prev.filter(item => item.id !== itemId));
+            await fetchData();
         } catch(error) {
             console.error("Failed to delete process item:", error);
             alert("Не удалось удалить элемент процесса.");
@@ -354,73 +432,58 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
         });
         setExpandedCommand(null);
     }
+
+    const handleArchiveScenario = async (scenarioId: string) => {
+        const scenario = scenarios.find(s => s.id === scenarioId);
+        if (!scenario) return;
     
-    const handleConfirmArchive = async () => {
-        if (!archiveConfirmation) return;
-
-        // 1. Add the final item. Wait for it.
-        await handleAddToProcess(archiveConfirmation.content, archiveConfirmation.title, archiveConfirmation.type);
-        setArchiveConfirmation(null);
-
-        // 2. Trigger chat animation and archive process items in DB
-        setIsArchiving(true);
+        const confirmed = window.confirm(`Вы уверены, что хотите архивировать сценарий "${scenario.title}"?`);
+        if (!confirmed) return;
+    
         try {
-            await supabaseService.archiveAllProcessItems();
-            // After successful DB update, trigger UI animation for process list
-            setIsArchivingProcess(true);
+            const itemIds = scenario.items.map(i => i.id);
+            await supabaseService.updateProcessItemArchivedStatus(itemIds, true);
+            await fetchData();
         } catch (error) {
-            console.error("Failed to archive process items:", error);
-            alert("Не удалось архивировать элементы процесса.");
-            setIsArchiving(false); // Stop animation if DB call fails
-            return;
+            console.error("Failed to archive scenario:", error);
+            alert("Не удалось архивировать сценарий.");
         }
-
-        // 3. Wait for animations to complete, then clean up
-        setTimeout(async () => {
-            try {
-                await supabaseService.deleteAllChatHistories();
-                setChatHistories({});
-                setProcessItems([]); // Clear local state after archiving
-            } catch (error) {
-                console.error("Failed to clear histories:", error);
-                alert("Не удалось очистить историю.");
-            } finally {
-                // Reset animation states
-                setIsArchiving(false);
-                setIsArchivingProcess(false);
-            }
-        }, 1200);
     };
-
-    const handleRejectArchive = () => {
-        setArchiveConfirmation(null);
-        setShowPrompterAddButton(true);
+    
+    const handleRestoreScenario = async (scenarioId: string) => {
+        const scenario = scenarios.find(s => s.id === scenarioId);
+        if (!scenario) return;
+    
+        try {
+            const itemIds = scenario.items.map(i => i.id);
+            await supabaseService.updateProcessItemArchivedStatus(itemIds, false);
+            await fetchData();
+        } catch (error) {
+            console.error("Failed to restore scenario:", error);
+            alert("Не удалось восстановить сценарий.");
+        }
     };
 
     const extractTitleFromResearch = (text: string): string | null => {
-        // Pattern 1: ## ДОКУМЕНТ-ПАКЕТ РЕШЕНИЯ: «ГЕНИИ НА КОСТЯХ»
         let match = text.match(/РЕШЕНИЯ:\s*«([^»]+)»/);
-// FIX: The error "Expected 1 arguments, but got 0" is often misleading. Adding optional chaining to `trim()` calls after a regex match provides robustness against potential runtime errors if `match[1]` is unexpectedly not a string, which can sometimes be misreported as this error.
         if (match && match[1]) return match[1]?.trim();
     
-        // Pattern 2: **1. Название ролика:** **ГЕНИИ НА КОСТЯХ...**
         match = text.match(/\*\*Название ролика:\*\*\s*\*\*(.*?)\*\*/);
         if (match && match[1]) return match[1]?.trim();
         
-        // Fallback: Grab the first h2 markdown header
         match = text.match(/^##\s*(.*)/m);
         if (match && match[1]) return match[1].replace(/«|»/g, '')?.trim();
     
         return null;
     }
-    
-    const isLongMessage = (text: string) => text.length > 800 || text.split('\n').length > 15;
 
     const renderAgentResponse = (msg: ChatMessage, index: number) => {
         const prevMessage = currentMessages[index - 1];
+        const isLastMessage = index === currentMessages.length - 1;
         
         let content: React.ReactNode;
-        let hasAddButton = false; // Flag to check for the presence of an "Add to process" button
+        let isPrompterFinalResponse = false;
+        const activeScenario = scenarios.find(s => s.id === activeScenarioId);
 
         // --- Response for 'Точка Зрения' ---
         if (activeAgent.id === 'angle') {
@@ -432,7 +495,6 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
                 content = (
                     <div>
                         {lines.map((line, idx) => {
-                            // Regex to capture the topic from "**Тема: [Topic Title]**" format.
                             const topicRegex = /(?:\d+\.\s*)?\*\*Тема:\s*(.*?)\*\*/i;
                             const match = line.match(topicRegex);
                             let title = '';
@@ -447,8 +509,9 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
                                         <p className="flex-1 whitespace-pre-wrap break-words">{line}</p>
                                         <button 
                                             onClick={() => handleAddToProcess(title, title, 'topic')} 
-                                            className="ml-4 px-3 py-1 bg-purple-700 hover:bg-purple-600 rounded-md text-xs font-medium transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0"
-                                            title={`Добавить тему "${title}" в процесс`}
+                                            disabled={!activeScenarioId}
+                                            className="ml-4 px-3 py-1 bg-purple-700 hover:bg-purple-600 rounded-md text-xs font-medium transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0 disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                            title={activeScenarioId ? `Добавить тему "${title}" в процесс` : "Сначала выберите сценарий"}
                                         >
                                             Добавить
                                         </button>
@@ -461,14 +524,24 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
                     </div>
                 );
             } else if (isDeepResponse && !isLoading) {
-                 hasAddButton = true;
+                 let suggestedTitle = extractTitleFromResearch(msg.text);
+                 if (!suggestedTitle) {
+                     const userPromptText = prevMessage?.text?.replace(/\/deep[35]?/, '').trim();
+                     if (userPromptText && userPromptText.length > 0) {
+                         suggestedTitle = `Deep Dive: ${userPromptText.substring(0, 50)}`;
+                     } else {
+                         suggestedTitle = 'Новый глубокий анализ';
+                     }
+                 }
                  content = (
                     <div>
                         <p className="whitespace-pre-wrap break-words">{msg.text}</p>
                         <div className="text-right mt-2">
                             <button 
-                                onClick={() => handleAddToProcess(msg.text, `Deep Dive: ${prevMessage.text.replace('/deep', '').trim()}`, 'deep_research')} 
-                                className="px-3 py-1 bg-purple-700 hover:bg-purple-600 rounded-md text-xs font-medium transition-colors"
+                                onClick={() => handleAddToProcess(msg.text, suggestedTitle, 'deep_research')} 
+                                disabled={!activeScenarioId}
+                                className="px-3 py-1 bg-purple-700 hover:bg-purple-600 rounded-md text-xs font-medium transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                title={activeScenarioId ? "Добавить в активный сценарий" : "Сначала выберите сценарий"}
                             >
                                 + Добавить
                             </button>
@@ -482,7 +555,6 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
         if (!content && activeAgent.id === 'deep') {
             const isGoResponse = prevMessage?.role === 'user' && prevMessage.text.trim().includes('/go');
             if (isGoResponse && !isLoading) {
-                hasAddButton = true;
                 const title = extractTitleFromResearch(msg.text) || `Исследование по: ${prevMessage.text.replace('/go', '').trim().substring(0, 30)}...`;
                 content = (
                     <div>
@@ -490,7 +562,9 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
                         <div className="text-right mt-2">
                             <button 
                                 onClick={() => handleAddToProcess(msg.text, title, 'research')} 
-                                className="px-3 py-1 bg-purple-700 hover:bg-purple-600 rounded-md text-xs font-medium transition-colors"
+                                disabled={!activeScenarioId}
+                                className="px-3 py-1 bg-purple-700 hover:bg-purple-600 rounded-md text-xs font-medium transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                title={activeScenarioId ? "Добавить в активный сценарий" : "Сначала выберите сценарий"}
                             >
                                 + Добавить
                             </button>
@@ -504,7 +578,6 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
         if (!content && activeAgent.id === 'scripter') {
             const isScripterResponse = prevMessage?.role === 'user' && (prevMessage.text.trim().includes('/eat') || prevMessage.text.trim().includes('/punch') || prevMessage.text.trim().includes('/clear_story'));
             if (isScripterResponse && !isLoading) {
-                hasAddButton = true;
                 const title = `Сценарий по: ${prevMessage.text.replace(/\/(eat|punch|clear_story)/, '').trim().substring(0, 30)}...`;
                 content = (
                     <div>
@@ -512,7 +585,9 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
                         <div className="text-right mt-2">
                             <button 
                                 onClick={() => handleAddToProcess(msg.text, title, 'script')} 
-                                className="px-3 py-1 bg-purple-700 hover:bg-purple-600 rounded-md text-xs font-medium transition-colors"
+                                disabled={!activeScenarioId}
+                                className="px-3 py-1 bg-purple-700 hover:bg-purple-600 rounded-md text-xs font-medium transition-colors disabled:bg-gray-600 disabled:cursor-not-allowed"
+                                title={activeScenarioId ? "Добавить в активный сценарий" : "Сначала выберите сценарий"}
                             >
                                 + Добавить в процесс
                             </button>
@@ -522,19 +597,24 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
             }
         }
         
+        // --- Response for 'Промптер' ---
+        if (activeAgent.id === 'prompter' && !isLoading && isLastMessage) {
+             const isPrompterCommand = prevMessage?.role === 'user' && (prevMessage.text.includes('/eat') || prevMessage.text.includes('/export'));
+             if (isPrompterCommand) {
+                isPrompterFinalResponse = true;
+             }
+        }
+        
         // Default: just render the text
         if (!content) {
             content = <p className="whitespace-pre-wrap break-words">{msg.text || '\u00A0'}</p>;
         }
 
-        const isLastMessage = index === currentMessages.length - 1;
-
         return (
             <div
                 key={index}
-                // FIX: The ref callback function must not return a value. Wrapped in curly braces to ensure void return.
                 ref={(el) => { messageRefs.current.set(index, el); }}
-                className={`flex gap-3 text-sm transition-all duration-500 ${isArchiving && !isLastMessage ? 'opacity-0 translate-x-full' : 'opacity-100 translate-x-0'}`}
+                className="flex gap-3 text-sm"
             >
                 <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0 font-bold">
                     {msg.role === 'user' ? 'U' : 'A'}
@@ -542,10 +622,14 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
                 <div className={`flex-1 p-3 rounded-lg ${msg.role === 'user' ? 'bg-gray-700/80' : 'bg-gray-600/50'}`}>
                     {content}
                     {isLoading && isLastMessage && <Spinner size="h-4 w-4 mt-2" />}
-                    {showPrompterAddButton && isLastMessage && hasAddButton && (
-                        <div className="text-right mt-2">
-                             <button onClick={() => handleAddToProcess(msg.text, `Визуал: ${prevMessage.text.replace(/\/(eat|export)/, '').trim().substring(0, 40)}...`, 'script')} className="px-3 py-1 bg-green-700 hover:bg-green-600 rounded-md text-xs font-medium transition-colors">
-                                + Все равно добавить
+                    {isPrompterFinalResponse && (
+                        <div className="text-right mt-3">
+                            <button
+                                onClick={() => activeScenario && handleAddToProcess(msg.text, `Визуал для: ${activeScenario.title}`, 'prompt')}
+                                disabled={!activeScenario}
+                                className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-md text-sm font-bold text-white transition-colors shadow-lg disabled:bg-gray-600 disabled:cursor-not-allowed"
+                            >
+                                Добавить визуал и завершить
                             </button>
                         </div>
                     )}
@@ -560,19 +644,79 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
 
             {/* Process Panel (Left) */}
             <div className="w-1/4 bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-4 flex flex-col overflow-hidden">
-                <h2 className="text-xl font-semibold text-purple-300 mb-4 flex-shrink-0">Процесс</h2>
-                <div className={`flex-1 overflow-y-auto pr-2 -mr-2 space-y-2 transition-all duration-500 ${isArchivingProcess ? 'opacity-0 -translate-y-full' : 'opacity-100 translate-y-0'}`}>
-                   {processItems.length === 0 && !isFetching && <p className="text-gray-500 text-sm text-center pt-4">Процесс пуст. Добавьте элементы из чата.</p>}
-                   {isFetching && <div className="flex justify-center pt-8"><Spinner /></div>}
-                   {processItems.map(item => (
-                        <div key={item.id} className="p-2 bg-gray-900/50 rounded-md group relative">
-                             <p className="text-xs font-bold text-purple-400">{item.type.replace('_', ' ')}</p>
-                             <p className="text-sm font-medium text-gray-200 truncate cursor-pointer" title={item.content} onClick={() => handleProcessItemClick(item)}>{item.title}</p>
-                             <button onClick={() => handleDeleteProcessItem(item.id)} className="absolute top-1 right-1 p-1 text-gray-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <XCircleIcon className="w-5 h-5" />
-                             </button>
-                        </div>
-                    ))}
+                <div className="flex justify-between items-center mb-4 flex-shrink-0">
+                    <h2 className="text-xl font-semibold text-purple-300">Процесс</h2>
+                    <button onClick={handleCreateScenario} title="Создать новый сценарий" className="p-1 text-gray-300 hover:text-purple-400">
+                        <PlusCircleIcon className="w-7 h-7" />
+                    </button>
+                </div>
+                <div className="flex-1 overflow-y-auto pr-2 -mr-2 space-y-4">
+                   {isFetching ? (
+                        <div className="flex justify-center pt-8"><Spinner /></div>
+                   ) : (
+                        <>
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-2">Активные сценарии</h3>
+                                <div className="space-y-2">
+                                    {activeScenarios.length === 0 && <p className="text-gray-500 text-sm text-center pt-2">Нет активных сценариев.</p>}
+                                    {activeScenarios.map(scenario => (
+                                        <details key={scenario.id} open className={`p-2 bg-gray-900/50 rounded-md group transition-all ${scenario.id === activeScenarioId ? 'border-2 border-purple-500' : 'border-2 border-transparent'}`}>
+                                            <summary className="font-semibold text-gray-200 cursor-pointer select-none flex justify-between items-center" onClick={(e) => { e.preventDefault(); setActiveScenarioId(scenario.id); }}>
+                                                <span>{scenario.title}</span>
+                                                {scenario.items.length >= 4 && (
+                                                    <button onClick={(e) => { e.stopPropagation(); handleArchiveScenario(scenario.id); }} title="Завершить и архивировать" className="p-1 text-gray-400 hover:text-green-400">
+                                                        <CheckCircleIcon className="w-5 h-5" />
+                                                    </button>
+                                                )}
+                                            </summary>
+                                            <div className="mt-2 pl-3 border-l-2 border-gray-600 space-y-1">
+                                                {scenario.items.map(item => (
+                                                    <div key={item.id} className="p-1.5 bg-gray-700/30 rounded-md relative group/item">
+                                                        <p className="text-xs font-bold text-purple-400">{item.type.replace('_', ' ')}</p>
+                                                        <p className="text-sm font-medium text-gray-200 truncate cursor-pointer" title={item.title} onClick={() => handleProcessItemClick(item)}>{item.title}</p>
+                                                        <button onClick={() => handleDeleteProcessItem(item.id)} className="absolute top-1 right-1 p-1 text-gray-500 hover:text-red-400 opacity-0 group-hover/item:opacity-100 transition-opacity">
+                                                            <XCircleIcon className="w-5 h-5" />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </details>
+                                    ))}
+                                </div>
+                            </div>
+                           
+                             {archivedScenarios.length > 0 && (
+                                <details className="pt-2" open>
+                                    <summary className="text-sm font-bold text-gray-400 uppercase tracking-wider cursor-pointer select-none">Архив ({archivedScenarios.length})</summary>
+                                    <div className="space-y-3 mt-2">
+                                        {archivedScenarios.map(scenario => (
+                                            <details key={scenario.id} className="p-2 bg-gray-900/30 rounded-md">
+                                                <summary className="font-semibold text-gray-300 text-sm cursor-pointer select-none flex justify-between items-center">
+                                                    <span>{scenario.title}</span>
+                                                    <button onClick={() => handleRestoreScenario(scenario.id)} title="Восстановить сценарий" className="p-1 text-gray-400 hover:text-green-400">
+                                                        <ArrowPathIcon className="w-5 h-5" />
+                                                    </button>
+                                                </summary>
+                                                <div className="mt-2 pl-3 border-l-2 border-gray-600 space-y-1">
+                                                    {scenario.items.map(item => (
+                                                         <div key={item.id} className="p-1.5 bg-gray-700/30 rounded-md group/item relative">
+                                                            <p className="text-xs font-bold text-gray-400">-- {item.type.replace('_', ' ')}</p>
+                                                            <p className="text-sm font-medium text-gray-400 truncate" title={item.title}>{item.title}</p>
+                                                            <div className="absolute top-1 right-1 flex opacity-0 group-hover/item:opacity-100 transition-opacity">
+                                                                <button onClick={() => handleDeleteProcessItem(item.id)} title="Удалить навсегда" className="p-1 text-gray-500 hover:text-red-400">
+                                                                    <TrashIcon className="w-5 h-5" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </details>
+                                        ))}
+                                    </div>
+                                </details>
+                            )}
+                        </>
+                   )}
                 </div>
             </div>
 
@@ -664,27 +808,6 @@ const ScriptRoomPage: React.FC<ScriptRoomPageProps> = ({ project, onUpdateProjec
                                 </div>
                             </div>
                         </>
-                    )}
-                    
-                    {/* Archive Confirmation Modal */}
-                    {archiveConfirmation && (
-                        <div className="absolute inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-20">
-                            <div className="bg-gray-800 border border-purple-500/50 rounded-lg shadow-xl p-6 max-w-lg text-center">
-                                <ArchiveBoxIcon className="w-12 h-12 mx-auto text-purple-400" />
-                                <h3 className="text-xl font-bold mt-4">Завершить и архивировать?</h3>
-                                <p className="text-gray-400 mt-2">
-                                    Это действие добавит финальный документ <strong>"{archiveConfirmation.title}"</strong> в процесс, а затем заархивирует все элементы и очистит чаты. Это действие необратимо.
-                                </p>
-                                <div className="mt-6 flex justify-center gap-4">
-                                    <button onClick={handleRejectArchive} className="px-6 py-2 rounded-md bg-gray-600 hover:bg-gray-500 text-white font-semibold">
-                                        Отмена
-                                    </button>
-                                    <button onClick={handleConfirmArchive} className="px-6 py-2 rounded-md bg-purple-600 hover:bg-purple-500 text-white font-semibold">
-                                        Подтвердить
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
                     )}
                 </div>
             </div>

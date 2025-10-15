@@ -1,4 +1,3 @@
-
 export interface ProjectScene {
   id: string;
   script: string;
@@ -32,9 +31,12 @@ export interface ChatMessage {
 
 // FIX: Moved ProcessItem here to be shared across modules
 export interface ProcessItem {
-    id: string;
+    id:string;
     title: string;
     content: string;
     sourceAgentId: string;
-    type: 'topic' | 'deep_research' | 'research' | 'script';
+    type: 'topic' | 'deep_research' | 'research' | 'script' | 'prompt';
+    is_archived: boolean;
+    scenarioId?: string;
+    scenarioTitle?: string;
 }

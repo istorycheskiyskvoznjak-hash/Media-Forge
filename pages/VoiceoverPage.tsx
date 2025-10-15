@@ -1,7 +1,9 @@
 
+
 import React, { useState, useEffect, useCallback } from 'react';
-import { Project, ProjectScene } from '../types';
+import { Project, ProjectScene, ProcessItem } from '../types';
 import * as geminiService from '../services/geminiService';
+import * as supabaseService from '../services/supabaseService';
 import Spinner from '../components/Spinner';
 
 // --- WAV Conversion Helpers ---
@@ -57,19 +59,64 @@ function createWavHeader(dataLength: number, options: WavConversionOptions): Arr
 }
 
 
-// --- MOCK DATA & CONFIG ---
-type ScenarioStatus = 'Опубликовано' | 'В работе' | 'В ящик';
-const mockScenarios: { id: string; title: string; status: ScenarioStatus }[] = [
-    { id: 'scen-001', title: 'Сценарий №001: Project 001: Neon City', status: 'В работе' },
-    { id: 'scen-002', title: 'Сценарий №002: Forgotten Kingdom', status: 'В ящик' },
-    { id: 'scen-003', title: 'Сценарий №003: Deep Space Anomaly', status: 'Опубликовано' },
-    { id: 'scen-004', title: 'Сценарий №004: Steampunk Detective', status: 'В работе' },
-    { id: 'scen-005', title: 'Сценарий №005: Whispering Forest', status: 'В работе' },
-];
-const statusColors: Record<ScenarioStatus, string> = {
-    'Опубликовано': 'bg-green-500/20 text-green-300 border border-green-500/30',
+// --- DATA TYPES & HELPERS ---
+interface VoiceoverScenario {
+    id: string;
+    title: string;
+    status: 'В работе' | 'Архив';
+    scenes: ProjectScene[]; // In this context, scenes are the script excerpts
+}
+
+const parseScriptToExcerpts = (scriptContent: string, scenarioId: string): ProjectScene[] => {
+    return scriptContent
+        .split('\n\n')
+        .map(s => s.trim())
+        .filter(Boolean)
+        .map((excerpt, index) => ({
+            id: `${scenarioId}-excerpt-${index + 1}`,
+            script: excerpt,
+            // These fields are not used in voiceover but are part of the shared type
+            baseImage: null,
+            generatedImage: null,
+            isProcessingImage: false,
+            generatedVideoUrl: null,
+            isProcessingVideo: false,
+            voiceoverHistory: [],
+        }));
+};
+
+const transformProcessItemsToVoiceoverScenarios = (items: ProcessItem[]): VoiceoverScenario[] => {
+    const archivedItems = items.filter(item => item.is_archived);
+    const scenarios: VoiceoverScenario[] = [];
+
+    const scriptItems = archivedItems.filter(item => item.type === 'script');
+
+    scriptItems.forEach(scriptItem => {
+        const topicMatch = archivedItems.find(
+          item => item.type === 'topic' && scriptItem.title.includes(item.title)
+        );
+        const scenarioTitle = topicMatch ? topicMatch.title : scriptItem.title.replace('Сценарий по: ', '');
+        
+        const excerpts = parseScriptToExcerpts(scriptItem.content, scriptItem.id);
+
+        if (excerpts.length > 0) {
+            scenarios.push({
+                id: scriptItem.id,
+                title: scenarioTitle,
+                status: 'Архив',
+                scenes: excerpts,
+            });
+        }
+    });
+
+    return scenarios;
+};
+
+
+// --- CONFIG ---
+const statusColors: Record<VoiceoverScenario['status'], string> = {
     'В работе': 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30',
-    'В ящик': 'bg-gray-500/20 text-gray-400 border border-gray-500/30',
+    'Архив': 'bg-green-500/20 text-green-300 border border-green-500/30',
 };
 const availableVoices = ['Achernar', 'Achird', 'Algenib', 'Algieba', 'Alnilam', 'Aoede', 'Autonoe', 'Callirrhoe', 'Charon', 'Despina', 'Enceladus', 'Erinome', 'Fenrir', 'Gacrux', 'Iapetus', 'Kore', 'Laomedeia', 'Leda', 'Orus', 'Puck', 'Pulcherrima', 'Rasalgethi', 'Sadachbia', 'Sadaltager', 'Schedar', 'Sulafat', 'Umbriel', 'Vindemiatrix', 'Zephyr', 'Zubenelgenubi'];
 const emotionPrompts = [
@@ -90,39 +137,61 @@ interface VoiceoverPageProps {
 
 const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project, onUpdateProject }) => {
     // State
-    const [activeScenarioId, setActiveScenarioId] = useState<string>(mockScenarios[0].id);
-    const [activeExcerptId, setActiveExcerptId] = useState<string | null>(null);
-    
+    const [scenarios, setScenarios] = useState<VoiceoverScenario[]>([]);
+    const [activeScenario, setActiveScenario] = useState<VoiceoverScenario | null>(null);
+    const [activeExcerpt, setActiveExcerpt] = useState<ProjectScene | null>(null);
+
     const [scriptText, setScriptText] = useState('');
     const [selectedVoice, setSelectedVoice] = useState(availableVoices[0]);
     const [isLoading, setIsLoading] = useState(false);
+    const [isFetching, setIsFetching] = useState(true);
     const [isMarkingStress, setIsMarkingStress] = useState(false);
     const [currentAudioUrl, setCurrentAudioUrl] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    const activeScenario = mockScenarios.find(s => s.id === activeScenarioId);
-    const activeExcerpt = project.scenes.find(s => s.id === activeExcerptId);
+    // Fetch and process data on mount
+    useEffect(() => {
+        const loadScenarios = async () => {
+            setIsFetching(true);
+            try {
+                const items = await supabaseService.getProcessItems();
+                const processedScenarios = transformProcessItemsToVoiceoverScenarios(items);
+                setScenarios(processedScenarios);
+            } catch (error) {
+                console.error("Failed to load scenarios:", error);
+                alert("Не удалось загрузить сценарии для Озвучки.");
+            } finally {
+                setIsFetching(false);
+            }
+        };
+        loadScenarios();
+    }, []);
 
     // Revoke object URLs on cleanup
     useEffect(() => {
         return () => {
             if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
-            // Also revoke history URLs when component unmounts
-            project.scenes.forEach(scene => {
-                scene.voiceoverHistory.forEach(h => URL.revokeObjectURL(h.url));
+            scenarios.forEach(scenario => {
+                scenario.scenes.forEach(scene => {
+                    scene.voiceoverHistory.forEach(h => URL.revokeObjectURL(h.url));
+                });
             });
         };
-    }, [currentAudioUrl, project.scenes]);
+    }, [currentAudioUrl, scenarios]);
+
+    const handleSelectScenario = (scenario: VoiceoverScenario) => {
+        setActiveScenario(scenario);
+        setActiveExcerpt(null);
+    };
 
     const handleSelectExcerpt = useCallback((scene: ProjectScene) => {
-        setActiveExcerptId(scene.id);
+        setActiveExcerpt(scene);
         setScriptText(scene.script);
         setCurrentAudioUrl(null);
         setError(null);
     }, []);
 
     const handleAddEmotion = (prompt: string) => {
-        // Remove existing prompts before adding a new one
         const cleanText = scriptText.replace(/^\([\s\S]*?\)\s*/, '');
         setScriptText(prompt + cleanText);
     };
@@ -144,7 +213,7 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project, onUpdateProject 
 
 
     const handleGenerate = async () => {
-        if (!scriptText || !activeExcerpt) return;
+        if (!scriptText || !activeExcerpt || !activeScenario) return;
 
         setIsLoading(true);
         setError(null);
@@ -178,24 +247,34 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project, onUpdateProject 
                 const url = URL.createObjectURL(finalBlob);
                 setCurrentAudioUrl(url);
 
-                // --- UPDATE PROJECT HISTORY ---
+                // --- UPDATE STATE IMMUTABLY ---
                 const newHistoryItem = {
                     id: Date.now().toString(),
                     url: url,
                     timestamp: new Date().toISOString(),
                     voice: selectedVoice,
                 };
-
-                const updatedHistory = [newHistoryItem, ...activeExcerpt.voiceoverHistory].slice(0, 5);
                 
-                // Revoke URL of the oldest item if it's being removed
-                if (activeExcerpt.voiceoverHistory.length >= 5) {
-                    URL.revokeObjectURL(activeExcerpt.voiceoverHistory[4].url);
-                }
+                setActiveExcerpt(prevExcerpt => {
+                    if (!prevExcerpt) return null;
+                    const updatedHistory = [newHistoryItem, ...prevExcerpt.voiceoverHistory].slice(0, 5);
+                     if (prevExcerpt.voiceoverHistory.length >= 5) {
+                        URL.revokeObjectURL(prevExcerpt.voiceoverHistory[4].url);
+                    }
+                    return { ...prevExcerpt, voiceoverHistory: updatedHistory };
+                });
 
-                const updatedScene = { ...activeExcerpt, voiceoverHistory: updatedHistory };
-                const updatedScenes = project.scenes.map(s => s.id === updatedScene.id ? updatedScene : s);
-                onUpdateProject({ ...project, scenes: updatedScenes });
+                setScenarios(prevScenarios => 
+                    prevScenarios.map(scen => 
+                        scen.id === activeScenario.id
+                        ? { ...scen, scenes: scen.scenes.map(s => 
+                            s.id === activeExcerpt.id 
+                            ? { ...s, voiceoverHistory: [newHistoryItem, ...s.voiceoverHistory].slice(0, 5)}
+                            : s
+                          )}
+                        : scen
+                    )
+                );
                 // --- END UPDATE ---
 
             } else {
@@ -222,24 +301,29 @@ const VoiceoverPage: React.FC<VoiceoverPageProps> = ({ project, onUpdateProject 
                 {/* Scenarios Column */}
                 <div className="col-span-3 bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-4 flex flex-col">
                     <h3 className="text-xl font-semibold text-purple-300 mb-4 flex-shrink-0">Сценарии</h3>
-                    <div className="space-y-2 overflow-y-auto pr-2 -mr-2">
-                        {[...mockScenarios].reverse().map(scenario => (
-                            <div key={scenario.id} onClick={() => { setActiveScenarioId(scenario.id); setActiveExcerptId(null); }} className={`p-3 rounded-lg cursor-pointer transition-colors ${activeScenarioId === scenario.id ? 'bg-purple-900/70' : 'hover:bg-gray-700/50 bg-gray-900/50'}`}>
-                                <div className="flex justify-between items-center">
-                                    <p className="font-bold text-gray-200 truncate pr-2">{scenario.title}</p>
-                                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full whitespace-nowrap ${statusColors[scenario.status]}`}>{scenario.status}</span>
+                    {isFetching ? <Spinner /> : (
+                        <div className="space-y-2 overflow-y-auto pr-2 -mr-2">
+                            {scenarios.length === 0 && <p className="text-gray-500 text-center text-sm py-4">Нет готовых сценариев в архиве.</p>}
+                            {[...scenarios].reverse().map(scenario => (
+                                <div key={scenario.id} onClick={() => handleSelectScenario(scenario)} className={`p-3 rounded-lg cursor-pointer transition-colors ${activeScenario?.id === scenario.id ? 'bg-purple-900/70' : 'hover:bg-gray-700/50 bg-gray-900/50'}`}>
+                                    <div className="flex justify-between items-center">
+                                        <p className="font-bold text-gray-200 truncate pr-2">{scenario.title}</p>
+                                        <span className={`px-2 py-0.5 text-xs font-semibold rounded-full whitespace-nowrap ${statusColors[scenario.status]}`}>{scenario.status}</span>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Excerpts & History Column */}
                 <div className="col-span-4 bg-gray-800 rounded-xl shadow-lg border border-gray-700 p-4 flex flex-col">
-                    <h3 className="text-xl font-semibold text-purple-300 mb-4 flex-shrink-0">Отрывки из "{activeScenario?.title}"</h3>
+                    <h3 className="text-xl font-semibold text-purple-300 mb-4 flex-shrink-0">Отрывки из "{activeScenario?.title || '...'}"</h3>
                     <div className="space-y-4 overflow-y-auto pr-2 -mr-2">
-                        {(activeScenarioId === 'scen-001' ? project.scenes : []).map((scene, index) => (
-                            <div key={scene.id} className={`p-3 rounded-lg transition-colors ${activeExcerptId === scene.id ? 'bg-gray-900/80 border border-purple-500/50' : 'bg-gray-900/50'}`}>
+                        {!activeScenario ? (
+                             <div className="flex-grow flex items-center justify-center text-gray-500">Выберите сценарий</div>
+                        ) : (activeScenario.scenes || []).map((scene, index) => (
+                            <div key={scene.id} className={`p-3 rounded-lg transition-colors ${activeExcerpt?.id === scene.id ? 'bg-gray-900/80 border border-purple-500/50' : 'bg-gray-900/50'}`}>
                                 <div onClick={() => handleSelectExcerpt(scene)} className="cursor-pointer">
                                     <p className="font-bold text-gray-200">Отрывок #{index + 1}</p>
                                     <p className="text-sm text-gray-400 mt-1 truncate">{scene.script}</p>

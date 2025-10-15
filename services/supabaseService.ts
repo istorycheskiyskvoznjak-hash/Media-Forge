@@ -1,5 +1,3 @@
-
-
 import { createClient } from '@supabase/supabase-js';
 import { supabaseUrl, supabaseAnonKey } from './supabaseConfig';
 import { ProcessItem, ChatMessage } from '../types';
@@ -12,7 +10,10 @@ type ProcessItemFromDB = {
   title: string;
   content: string;
   source_agent_id: string;
-  type: 'topic' | 'deep_research' | 'research' | 'script';
+  type: 'topic' | 'deep_research' | 'research' | 'script' | 'prompt';
+  is_archived: boolean;
+  scenario_id?: string;
+  scenario_title?: string;
 };
 
 type ChatHistoryFromDB = {
@@ -30,8 +31,9 @@ const headers = {
 // --- Process Items API ---
 
 export const getProcessItems = async (): Promise<ProcessItem[]> => {
-    const response = await fetch(`${supabaseUrl}/rest/v1/process_items?select=*&order=created_at.asc&is_archived=eq.false`, {
+    const response = await fetch(`${supabaseUrl}/rest/v1/process_items?select=*&order=created_at.asc`, {
         headers,
+        cache: 'no-store', // Prevent fetching stale data after an update
     });
 
     if (!response.ok) {
@@ -48,16 +50,21 @@ export const getProcessItems = async (): Promise<ProcessItem[]> => {
         content: item.content,
         sourceAgentId: item.source_agent_id,
         type: item.type,
+        is_archived: item.is_archived,
+        scenarioId: item.scenario_id,
+        scenarioTitle: item.scenario_title,
     }));
 };
 
-export const addProcessItem = async (item: Omit<ProcessItem, 'id'>): Promise<ProcessItem> => {
+export const addProcessItem = async (item: Omit<ProcessItem, 'id' | 'is_archived'>): Promise<ProcessItem> => {
      // Map from camelCase to snake_case for insertion
     const itemForDB = {
         title: item.title,
         content: item.content,
         source_agent_id: item.sourceAgentId,
         type: item.type,
+        scenario_id: item.scenarioId,
+        scenario_title: item.scenarioTitle,
     };
 
     const response = await fetch(`${supabaseUrl}/rest/v1/process_items?select=*`, {
@@ -71,7 +78,17 @@ export const addProcessItem = async (item: Omit<ProcessItem, 'id'>): Promise<Pro
 
     if (!response.ok) {
         const error = await response.json();
-        throw new Error(`Failed to add process item: ${error.message}`);
+        const errorMessage = `Failed to add process item: ${error.message}`;
+
+        // Provide a more helpful error for the specific enum issue.
+        if (error.message && error.message.includes("invalid input value for enum process_item_type")) {
+            const valueMatch = error.message.match(/"(.*?)"/);
+            const invalidValue = valueMatch ? valueMatch[1] : "a new value";
+            const detailedError = `Ошибка схемы базы данных: Тип '${invalidValue}' не является допустимым значением для 'process_item_type'. Пожалуйста, обновите перечисление (enum) в настройках вашего проекта Supabase, чтобы включить это значение.`;
+            throw new Error(detailedError);
+        }
+
+        throw new Error(errorMessage);
     }
 
     const data: ProcessItemFromDB[] = await response.json();
@@ -83,6 +100,9 @@ export const addProcessItem = async (item: Omit<ProcessItem, 'id'>): Promise<Pro
         content: newItem.content,
         sourceAgentId: newItem.source_agent_id,
         type: newItem.type,
+        is_archived: newItem.is_archived,
+        scenarioId: newItem.scenario_id,
+        scenarioTitle: newItem.scenario_title,
     };
 };
 
@@ -98,16 +118,19 @@ export const deleteProcessItem = async (id: string): Promise<void> => {
     }
 };
 
-export const archiveAllProcessItems = async (): Promise<void> => {
-    const response = await fetch(`${supabaseUrl}/rest/v1/process_items?is_archived=eq.false`, {
+export const updateProcessItemArchivedStatus = async (idOrIds: string | string[], isArchived: boolean): Promise<void> => {
+    const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds];
+    if (ids.length === 0) return;
+
+    const response = await fetch(`${supabaseUrl}/rest/v1/process_items?id=in.(${ids.join(',')})`, {
         method: 'PATCH',
         headers,
-        body: JSON.stringify({ is_archived: true }),
+        body: JSON.stringify({ is_archived: isArchived }),
     });
 
     if (!response.ok) {
         const error = await response.json();
-        throw new Error(`Failed to archive process items: ${error.message}`);
+        throw new Error(`Failed to update process item status: ${error.message}`);
     }
 };
 
@@ -129,6 +152,7 @@ export const deleteAllChatHistories = async (): Promise<void> => {
 export const getChatHistories = async (): Promise<Record<string, ChatMessage[]>> => {
     const response = await fetch(`${supabaseUrl}/rest/v1/chat_histories?select=agent_id,history`, {
         headers,
+        cache: 'no-store', // Prevent fetching stale data
     });
 
     if (!response.ok) {
